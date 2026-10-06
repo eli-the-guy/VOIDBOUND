@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>VOIDBOUND</title>
+    <link rel="stylesheet" href="style.css?v=3" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="logo">VOIDBOUND</div>
+        <div class="stats">
+          <span>LEVEL <b id="levelText">1</b></span>
+          <span>ROUND <b id="roundText">1</b></span>
+          <span>ENEMIES <b id="enemyText">0</b></span>
+        </div>
+      </header>
+
+      <main id="gameWrap">
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- DOM player: intentionally separate from the canvas so the player can NEVER
+           disappear behind the arena/background. -->
+        <div id="playerDom" aria-hidden="true">
+          <div class="player-core"></div>
+          <div class="player-visor"></div>
+          <div class="player-direction"></div>
+        </div>
+
+        <div id="altarDom1" class="altar-dom">
+          <div class="altar-glow"></div>
+          <div class="altar-pedestal"><div class="altar-crystal"></div></div>
+          <div class="altar-label">ALTAR I</div>
+          <div class="altar-name">CHOOSE ENEMY</div>
+          <div class="altar-desc">Select an enemy</div>
+        </div>
+
+        <div id="altarDom2" class="altar-dom">
+          <div class="altar-glow"></div>
+          <div class="altar-pedestal"><div class="altar-crystal"></div></div>
+          <div class="altar-label">ALTAR II</div>
+          <div class="altar-name">CHOOSE ENEMY</div>
+          <div class="altar-desc">Select an enemy</div>
+        </div>
+
+        <div id="altarScreen" class="overlay">
+          <section class="panel altar-panel">
+            <div class="eyebrow">ALTAR CHOICE</div>
+            <h1 id="altarTitle">CHOOSE YOUR ENEMY</h1>
+            <p id="altarHint">
+              Choose one enemy for each altar. The two altars must be different.
+            </p>
+            <div id="enemyChoices" class="choices physical-choice"></div>
+            <div class="controls">
+              WASD / ARROWS — MOVE &nbsp; • &nbsp; MOUSE — AIM &nbsp; • &nbsp;
+              CLICK — SHURIKEN &nbsp; • &nbsp; SPACE — JUMP
+            </div>
+          </section>
+        </div>
+
+        <div id="startScreen" class="overlay centered">
+          <section class="panel start-panel">
+            <div class="eyebrow">ENTER THE VOID</div>
+            <h1>VOIDBOUND</h1>
+            <p>
+              Choose your enemies. Survive the arena. Nothing takes two hits.
+            </p>
+            <button id="startBtn">BEGIN RUN</button>
+          </section>
+        </div>
+
+        <div id="upgradeScreen" class="overlay centered hidden">
+          <section class="panel">
+            <div class="eyebrow">ALTAR EVOLUTION</div>
+            <h1>UPGRADE THE VOID</h1>
+            <p>Choose one upgrade. You get three different choices.</p>
+            <div id="upgradeChoices" class="choices"></div>
+          </section>
+        </div>
+
+        <div id="gameOverScreen" class="overlay centered hidden">
+          <section class="panel">
+            <div class="eyebrow">RUN ENDED</div>
+            <h1>VOID CLAIMED YOU</h1>
+            <p id="gameOverText">You reached level 1.</p>
+            <button id="restartBtn">RESTART</button>
+          </section>
+        </div>
+
+        <div id="message"></div>
+      </main>
+
+      <footer>VOIDBOUND // MAGENTA PROTOCOL</footer>
+    </div>
+    <script src="game.js?v=voidbound-rebuild-3"></script>
+  </body>
+</html>
