@@ -259,6 +259,12 @@
   }
   function classDefs() {
     return {
+      ninja: {
+        name: "NINJA",
+        tag: "SHURIKEN",
+        desc: "The standard class. Aim and fire your shuriken normally.",
+        icon: "NIN",
+      },
       dasher: {
         name: "DASHER",
         tag: "E — DASH",
@@ -268,7 +274,7 @@
       grappler: {
         name: "GRAPPLER",
         tag: "HOOK",
-        desc: "Your shuriken is replaced by a grappling hook. Shoot a point to pull yourself toward it, or grapple an enemy to kill it.",
+        desc: "Your shuriken is replaced by a grappling hook. Shoot the exact point you are aiming at and pull yourself all the way there. Grappling enemies kills them.",
         icon: "GRP",
       },
       ghost: {
@@ -418,7 +424,9 @@
     if (state.className === "grappler") {
       if (state.grapple) return;
       const p = state.player,
-        a = p.angle;
+        targetX = mouse.x,
+        targetY = mouse.y,
+        a = Math.atan2(targetY - p.y, targetX - p.x);
       state.grapple = {
         x: p.x,
         y: p.y,
@@ -426,9 +434,8 @@
         vy: Math.sin(a) * (620 + state.classCore * 70),
         r: 9,
         phase: "travel",
-        life: 2.2,
-        targetX: null,
-        targetY: null,
+        targetX,
+        targetY,
       };
       return;
     }
@@ -751,40 +758,39 @@
     );
     if (state.grapple) {
       const g = state.grapple;
-      g.x += g.vx * dt;
-      g.y += g.vy * dt;
-      g.life -= dt;
       for (const e of state.enemies)
         if (e.alive && dist(g, e) < e.r + g.r) {
           e.alive = false;
-          state.grapple = null;
-          break;
+          for (let k = 0; k < 10; k++)
+            particle(e.x, e.y, enemyDefs[e.type].color, 0.45);
         }
-      if (
-        g &&
-        state.grapple &&
-        g.phase === "travel" &&
-        (g.life <= 0 ||
-          g.x < arena.x - 20 ||
-          g.x > arena.x + arena.w + 20 ||
-          g.y < arena.y - 20 ||
-          g.y > arena.y + arena.h + 20)
-      ) {
-        g.phase = "pull";
-        g.targetX = clamp(g.x, arena.x + 15, arena.x + arena.w - 15);
-        g.targetY = clamp(g.y, arena.y + 15, arena.y + arena.h - 15);
-        g.life = 1.4;
+      if (g.phase === "travel") {
+        const d = dist(g, { x: g.targetX, y: g.targetY }),
+          step = (620 + state.classCore * 70) * dt;
+        if (d <= step) {
+          g.x = g.targetX;
+          g.y = g.targetY;
+          g.phase = "pull";
+        } else {
+          g.x += g.vx * dt;
+          g.y += g.vy * dt;
+        }
       }
     }
     if (state.grapple && state.grapple.phase === "pull") {
       const g = state.grapple;
-      const a = angleTo(p, { x: g.targetX, y: g.targetY }),
+      const target = { x: g.targetX, y: g.targetY },
+        d0 = dist(p, target),
         pull = 285 + state.classCore * 45;
-      const d = Math.min(dist(p, { x: g.targetX, y: g.targetY }), pull * dt);
-      p.x += Math.cos(a) * d;
-      p.y += Math.sin(a) * d;
-      if (dist(p, { x: g.targetX, y: g.targetY }) < 10 || g.life <= 0)
+      if (d0 <= pull * dt) {
+        p.x = g.targetX;
+        p.y = g.targetY;
         state.grapple = null;
+      } else {
+        const a = angleTo(p, target);
+        p.x += Math.cos(a) * pull * dt;
+        p.y += Math.sin(a) * pull * dt;
+      }
     }
     for (const e of state.enemies) if (e.alive) updateEnemy(e, dt);
     for (const b of state.enemyShots) {
