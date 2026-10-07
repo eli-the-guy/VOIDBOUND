@@ -415,3 +415,17 @@ footer {
     transform: translate(-50%, -50%) scale(0.8);
   }
 }
+
+#classScreen .panel {
+  width: min(760px, 92vw);
+}
+#classChoices .choice {
+  min-height: 145px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.ghost-active {
+  filter: brightness(1.25);
+  opacity: 0.82;
+}

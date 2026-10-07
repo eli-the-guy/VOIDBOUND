@@ -15,6 +15,8 @@
     altarTitle = document.getElementById("altarTitle"),
     altarHint = document.getElementById("altarHint"),
     enemyChoices = document.getElementById("enemyChoices");
+  const classScreen = document.getElementById("classScreen"),
+    classChoices = document.getElementById("classChoices");
   const upgradeScreen = document.getElementById("upgradeScreen"),
     upgradeChoices = document.getElementById("upgradeChoices"),
     startScreen = document.getElementById("startScreen"),
@@ -75,6 +77,11 @@
     },
   };
   const upgradeDefs = {
+    classcore: {
+      name: "CLASS CORE",
+      desc: "Boosts your current class ability. DASHER: stronger dash. GRAPPLER: faster hook and pull. GHOST: faster ghost movement and shorter cooldown.",
+      icon: "CORE",
+    },
     speed: { name: "SPEED", desc: "Move faster.", icon: "SPD" },
     bullet: {
       name: "BULLET SPEED",
@@ -136,6 +143,7 @@
     enemyShots: [],
     particles: [],
     upgrades: {
+      classcore: 0,
       speed: 0,
       bullet: 0,
       jump: 0,
@@ -160,6 +168,10 @@
     transitionToken: 0,
     roundEnemyIds: [],
     altarQueued: false,
+    className: null,
+    classCore: 0,
+    grapple: null,
+    ghost: { active: false, anchorX: 0, anchorY: 0, hits: 0, cooldown: 0 },
   };
   let arena = { x: 0, y: 0, w: 0, h: 0 };
   function clamp(v, a, b) {
@@ -245,6 +257,57 @@
     const t = Object.keys(enemyDefs).sort(() => Math.random() - 0.5);
     state.altarOptions = [t[0], t[1]];
   }
+  function classDefs() {
+    return {
+      dasher: {
+        name: "DASHER",
+        tag: "E — DASH",
+        desc: "No weapon. Press E to dash forward and kill enemies by colliding with them. While dashing, Hunters are destroyed instead of killing you.",
+        icon: "DSH",
+      },
+      grappler: {
+        name: "GRAPPLER",
+        tag: "HOOK",
+        desc: "Your shuriken is replaced by a grappling hook. Shoot a point to pull yourself toward it, or grapple an enemy to kill it.",
+        icon: "GRP",
+      },
+      ghost: {
+        name: "GHOST",
+        tag: "E — GHOST",
+        desc: "Press E to enter ghost form. You become able to survive one extra hit but move slower. Press E again to return to your activation spot. 10 second cooldown.",
+        icon: "GST",
+      },
+    };
+  }
+  function showClassChoice() {
+    state.mode = "class";
+    classChoices.innerHTML = "";
+    for (const [k, cdef] of Object.entries(classDefs())) {
+      const c = document.createElement("div");
+      c.className = "choice";
+      c.innerHTML = `<div class="tag">${cdef.tag}</div><div class="name">${cdef.name}</div><div class="desc">${cdef.desc}</div>`;
+      c.onclick = () => chooseClass(k);
+      classChoices.appendChild(c);
+    }
+    classScreen.classList.remove("hidden");
+    altarScreen.style.display = "none";
+    upgradeScreen.classList.add("hidden");
+    updateDOM();
+  }
+  function chooseClass(k) {
+    state.className = k;
+    state.classCore = state.upgrades.classcore || 0;
+    state.ghost = {
+      active: false,
+      anchorX: 0,
+      anchorY: 0,
+      hits: 0,
+      cooldown: 0,
+    };
+    state.grapple = null;
+    classScreen.classList.add("hidden");
+    showAltar();
+  }
   function showAltar() {
     state.mode = "altar";
     state.altarCooldown = 0;
@@ -322,6 +385,7 @@
     showMessage("CHOSEN: " + enemyDefs[chosen].name);
   }
   function firePlayer() {
+    if (state.mode === "class") return;
     if (state.mode === "altar") {
       const p = state.player,
         a = p.angle;
@@ -351,6 +415,24 @@
       }
       return;
     }
+    if (state.className === "grappler") {
+      if (state.grapple) return;
+      const p = state.player,
+        a = p.angle;
+      state.grapple = {
+        x: p.x,
+        y: p.y,
+        vx: Math.cos(a) * (620 + state.classCore * 70),
+        vy: Math.sin(a) * (620 + state.classCore * 70),
+        r: 9,
+        phase: "travel",
+        life: 2.2,
+        targetX: null,
+        targetY: null,
+      };
+      return;
+    }
+    if (state.className === "dasher") return;
     if (state.player.cooldown > 0) return;
     const p = state.player,
       a = p.angle,
@@ -390,6 +472,7 @@
   }
   function chooseUpgrade(k) {
     state.upgrades[k]++;
+    if (k === "classcore") state.classCore = state.upgrades.classcore;
     upgradeScreen.classList.add("hidden");
     if (k === "weaken") state.weaken = state.selectedEnemy;
     if (k === "jump") state.player.jumpMax = 0.8 + state.upgrades.jump * 0.3;
@@ -408,6 +491,7 @@
     state.shots = [];
     state.enemyShots = [];
     state.upgrades = {
+      classcore: 0,
       speed: 0,
       bullet: 0,
       jump: 0,
@@ -419,8 +503,18 @@
       range: 0,
     };
     state.weaken = null;
+    state.className = null;
+    state.classCore = 0;
+    state.grapple = null;
+    state.ghost = {
+      active: false,
+      anchorX: 0,
+      anchorY: 0,
+      hits: 0,
+      cooldown: 0,
+    };
     resetPlayer();
-    showAltar();
+    showClassChoice();
   }
   document.getElementById("startBtn").onclick = startGame;
   document.getElementById("restartBtn").onclick = () => location.reload();
@@ -523,6 +617,43 @@
       life: 8,
     });
   }
+  function startDash() {
+    if (state.player.cooldown > 0 || (state.player.jump > 0 && false)) return;
+    state.player.dashTime = 0.28;
+    state.player.dashCooldown = 1.0;
+    state.player.dashV = 650 + state.classCore * 100;
+    state.player.dashX = state.player.x;
+    state.player.dashY = state.player.y;
+    state.player.dashAngle = state.player.angle;
+    state.player.cooldown = state.player.dashCooldown;
+  }
+  function toggleGhost() {
+    const g = state.ghost;
+    if (!g) return;
+    if (g.active) {
+      g.active = false;
+      state.player.x = g.anchorX;
+      state.player.y = g.anchorY;
+      g.cooldown = 10 - Math.min(5, state.classCore);
+      g.hits = 0;
+    } else if (g.cooldown <= 0) {
+      g.active = true;
+      g.anchorX = state.player.x;
+      g.anchorY = state.player.y;
+      g.hits = 1;
+    }
+  }
+  function hurtPlayer(source) {
+    const p = state.player,
+      g = state.ghost;
+    if (g && g.active && g.hits > 0) {
+      g.hits--;
+      showMessage("GHOST HIT ABSORBED");
+      return false;
+    }
+    die();
+    return true;
+  }
   function update(dt) {
     state.player.angle = angleTo(state.player, mouse);
     if (state.mode === "altar") {
@@ -543,18 +674,40 @@
         (keys.a || keys.arrowleft ? 1 : 0),
       my =
         (keys.s || keys.arrowdown ? 1 : 0) - (keys.w || keys.arrowup ? 1 : 0),
-      len = Math.hypot(mx, my) || 1,
-      sp = 245 + state.upgrades.speed * 35;
-    p.x = clamp(
-      p.x + (mx / len) * sp * dt,
-      arena.x + 15,
-      arena.x + arena.w - 15,
-    );
-    p.y = clamp(
-      p.y + (my / len) * sp * dt,
-      arena.y + 15,
-      arena.y + arena.h - 15,
-    );
+      len = Math.hypot(mx, my) || 1;
+    let sp = 245 + state.upgrades.speed * 35;
+    if (state.ghost.active) sp *= 0.62 + Math.min(0.25, state.classCore * 0.04);
+    if (state.player.dashTime > 0) {
+      state.player.dashTime -= dt;
+      p.x += Math.cos(state.player.dashAngle) * state.player.dashV * dt;
+      p.y += Math.sin(state.player.dashAngle) * state.player.dashV * dt;
+      for (const e of state.enemies)
+        if (e.alive && dist(p, e) < p.r + e.r + 8) {
+          if (state.className === "dasher") {
+            e.alive = false;
+            for (let k = 0; k < 10; k++)
+              particle(e.x, e.y, enemyDefs[e.type].color, 0.45);
+          } else if (e.type === "hunter") {
+            hurtPlayer(e);
+          }
+        }
+      if (state.player.dashTime <= 0) state.player.cooldown = 0;
+    } else {
+      p.x = clamp(
+        p.x + (mx / len) * sp * dt,
+        arena.x + 15,
+        arena.x + arena.w - 15,
+      );
+      p.y = clamp(
+        p.y + (my / len) * sp * dt,
+        arena.y + 15,
+        arena.y + arena.h - 15,
+      );
+    }
+    p.x = clamp(p.x, arena.x + 15, arena.x + arena.w - 15);
+    p.y = clamp(p.y, arena.y + 15, arena.y + arena.h - 15);
+    if (state.ghost.cooldown > 0)
+      state.ghost.cooldown = Math.max(0, state.ghost.cooldown - dt);
     if (mouse.down) firePlayer();
     for (const s of state.shots) {
       if (state.upgrades.homing) {
@@ -596,6 +749,43 @@
         s.y > arena.y - 30 &&
         s.y < arena.y + arena.h + 30,
     );
+    if (state.grapple) {
+      const g = state.grapple;
+      g.x += g.vx * dt;
+      g.y += g.vy * dt;
+      g.life -= dt;
+      for (const e of state.enemies)
+        if (e.alive && dist(g, e) < e.r + g.r) {
+          e.alive = false;
+          state.grapple = null;
+          break;
+        }
+      if (
+        g &&
+        state.grapple &&
+        g.phase === "travel" &&
+        (g.life <= 0 ||
+          g.x < arena.x - 20 ||
+          g.x > arena.x + arena.w + 20 ||
+          g.y < arena.y - 20 ||
+          g.y > arena.y + arena.h + 20)
+      ) {
+        g.phase = "pull";
+        g.targetX = clamp(g.x, arena.x + 15, arena.x + arena.w - 15);
+        g.targetY = clamp(g.y, arena.y + 15, arena.y + arena.h - 15);
+        g.life = 1.4;
+      }
+    }
+    if (state.grapple && state.grapple.phase === "pull") {
+      const g = state.grapple;
+      const a = angleTo(p, { x: g.targetX, y: g.targetY }),
+        pull = 285 + state.classCore * 45;
+      const d = Math.min(dist(p, { x: g.targetX, y: g.targetY }), pull * dt);
+      p.x += Math.cos(a) * d;
+      p.y += Math.sin(a) * d;
+      if (dist(p, { x: g.targetX, y: g.targetY }) < 10 || g.life <= 0)
+        state.grapple = null;
+    }
     for (const e of state.enemies) if (e.alive) updateEnemy(e, dt);
     for (const b of state.enemyShots) {
       if (b.orbit && b.orbitEnemy && b.orbitEnemy.alive) {
@@ -635,8 +825,7 @@
     }
     for (const b of state.enemyShots)
       if (dist(p, b) < p.r + b.r && p.jump <= 0) {
-        die();
-        return;
+        if (hurtPlayer(b)) return;
       }
     if (roundEnemiesDefeated()) {
       completeLevel();
@@ -740,13 +929,14 @@
           e.phase = "wave";
           e.wave = 0;
           if (dist(p, e) < 48 && p.jump <= 0) {
-            die();
-            return;
+            if (hurtPlayer(e)) return;
           }
         }
       } else {
         e.wave += 120 * dt;
-        if (Math.abs(dist(p, e) - e.wave) < 14 && p.jump <= 0) die();
+        if (Math.abs(dist(p, e) - e.wave) < 14 && p.jump <= 0) {
+          if (hurtPlayer(e)) return;
+        }
         if (e.wave > Math.max(arena.w, arena.h) * 1.25) {
           e.phase = "idle";
           e.phaseTimer = attackDelay(5);
@@ -790,8 +980,7 @@
           dx * Math.sin(e.swordAngle) - dy * Math.cos(e.swordAngle),
         );
         if (along >= -80 && along <= 10 && side < 16 && p.jump <= 0) {
-          die();
-          return;
+          if (hurtPlayer(e)) return;
         }
         if (
           e.swordX < arena.x - 120 ||
@@ -824,8 +1013,7 @@
         e.x += Math.cos(e.dashAngle) * sp * dt;
         e.y += Math.sin(e.dashAngle) * sp * dt;
         if (dist(p, e) < p.r + e.r && p.jump <= 0) {
-          die();
-          return;
+          if (hurtPlayer(e)) return;
         }
         if (
           e.x < arena.x - 80 ||
@@ -853,8 +1041,7 @@
       e.x = clamp(e.x, arena.x + 25, arena.x + arena.w - 25);
       e.y = clamp(e.y, arena.y + 25, arena.y + arena.h - 25);
       if (dist(p, e) < p.r + e.r && p.jump <= 0) {
-        die();
-        return;
+        if (hurtPlayer(e)) return;
       }
     } else if (e.type === "mine") {
       e.mineTimer -= dt;
@@ -866,8 +1053,7 @@
       e.mines = e.mines.filter((m) => m.life > 0);
       for (const m of e.mines)
         if (dist(p, m) < 28 && p.jump <= 0) {
-          die();
-          return;
+          if (hurtPlayer(m)) return;
         }
     } else if (e.type === "orbiter") {
       e.orbitTimer -= dt;
@@ -925,7 +1111,7 @@
       state.level++;
       state.round = state.level;
       if (state.level % 5 === 0) showUpgrades();
-      else showAltar();
+      else showClassChoice();
     }, 650);
   }
   function particle(x, y, c, life) {
@@ -1015,6 +1201,21 @@
     for (const e of state.enemies) if (e.alive) drawEnemy(e);
     for (const b of state.enemyShots) drawEnemyShot(b);
     for (const s of state.shots) drawShot(s);
+    if (state.grapple) {
+      ctx.save();
+      ctx.strokeStyle = "#6ff7ff";
+      ctx.lineWidth = 2;
+      ctx.shadowColor = "#6ff7ff";
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.moveTo(state.player.x, state.player.y);
+      ctx.lineTo(state.grapple.x, state.grapple.y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(state.grapple.x, state.grapple.y, 8, 0, TAU);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
   function drawEnemy(e) {
     const c = enemyDefs[e.type].color;
@@ -1236,6 +1437,10 @@
     if (k === " ") {
       e.preventDefault();
       if (state.mode === "play") tryJump();
+    }
+    if (k === "e" && state.mode === "play") {
+      if (state.className === "dasher") startDash();
+      else if (state.className === "ghost") toggleGhost();
     }
   });
   window.addEventListener("keyup", (e) => (keys[e.key.toLowerCase()] = false));
