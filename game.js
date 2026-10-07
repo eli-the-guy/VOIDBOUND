@@ -1111,7 +1111,7 @@
       state.level++;
       state.round = state.level;
       if (state.level % 5 === 0) showUpgrades();
-      else showClassChoice();
+      else showAltar();
     }, 650);
   }
   function particle(x, y, c, life) {
