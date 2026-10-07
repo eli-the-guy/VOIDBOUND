@@ -75,6 +75,56 @@
       desc: "Creates three orbiting shots that eventually break away and fly outward.",
       color: "#8f7bff",
     },
+    repeater: {
+      name: "REPEATER",
+      desc: "Spawns slightly behind you and copies the path you took a moment ago.",
+      color: "#ff4f8b",
+    },
+    mirror: {
+      name: "MIRROR",
+      desc: "Mirrors your position across the arena and attacks from the reflected side.",
+      color: "#7df9ff",
+    },
+    timekeeper: {
+      name: "TIMEKEEPER",
+      desc: "Records where you were and fires toward an earlier position, punishing predictable movement.",
+      color: "#f7d354",
+    },
+    voidcaster: {
+      name: "VOID CASTER",
+      desc: "Marks several locations around you, then detonates them with a radial burst.",
+      color: "#a56bff",
+    },
+    teleporter: {
+      name: "TELEPORTER",
+      desc: "Teleports around the arena and fires a rapid burst from each new position.",
+      color: "#4de8ff",
+    },
+    splitter: {
+      name: "SPLITTER",
+      desc: "Fires a heavy shot that splits into five dangerous projectiles.",
+      color: "#ff704d",
+    },
+    predictor: {
+      name: "PREDICTOR",
+      desc: "Leads its shots based on your current movement direction.",
+      color: "#65ff7a",
+    },
+    pulsar: {
+      name: "PULSAR",
+      desc: "Creates a growing shock ring that sweeps outward through the arena.",
+      color: "#c86bff",
+    },
+    mimic: {
+      name: "MIMIC",
+      desc: "Copies the attack style of the enemies already haunting the arena.",
+      color: "#ffffff",
+    },
+    voidhunter: {
+      name: "VOID HUNTER",
+      desc: "Tracks you, locks on, then launches a devastating long-range lunge.",
+      color: "#ff3b6b",
+    },
   };
   const upgradeDefs = {
     classcore: {
@@ -254,7 +304,20 @@
     updateDOM();
   }
   function chooseTwoRandomEnemies() {
-    const t = Object.keys(enemyDefs).sort(() => Math.random() - 0.5);
+    const basic = [
+      "shooter",
+      "shotgun",
+      "beam",
+      "shock",
+      "sword",
+      "dasher",
+      "burst",
+      "hunter",
+      "mine",
+      "orbiter",
+    ];
+    const pool = state.level >= 11 ? Object.keys(enemyDefs) : basic;
+    const t = [...pool].sort(() => Math.random() - 0.5);
     state.altarOptions = [t[0], t[1]];
   }
   function classDefs() {
@@ -365,6 +428,24 @@
     e.mineTimer = attackDelay(4);
     e.mines = [];
     e.orbitTimer = attackDelay(4);
+    e.history = [];
+    e.historyTimer = 0;
+    e.mirrorTimer = attackDelay(2.5);
+    e.timeHistory = [];
+    e.timeTimer = 0;
+    e.voidTimer = attackDelay(4);
+    e.voidPhase = "mark";
+    e.voidMarks = [];
+    e.teleportTimer = attackDelay(3);
+    e.splitterTimer = attackDelay(3);
+    e.predictorTimer = attackDelay(2.5);
+    e.pulseTimer = attackDelay(5);
+    e.pulseRadius = 0;
+    e.mimicTimer = attackDelay(3);
+    e.huntTimer = attackDelay(4);
+    e.huntPhase = "track";
+    e.huntTargetX = e.x;
+    e.huntTargetY = e.y;
   }
   function reviveAllEnemies() {
     for (const e of state.enemies) resetEnemyForRound(e);
@@ -552,6 +633,19 @@
       x = rnd(arena.x + pad, arena.x + arena.w - pad);
       y = rnd(arena.y + pad, arena.y + arena.h - pad);
     } while (Math.hypot(x - state.player.x, y - state.player.y) < 180);
+    if (type === "repeater") {
+      const backAngle = state.player.angle + Math.PI;
+      x = clamp(
+        state.player.x + Math.cos(backAngle) * 120,
+        arena.x + pad,
+        arena.x + arena.w - pad,
+      );
+      y = clamp(
+        state.player.y + Math.sin(backAngle) * 120,
+        arena.y + pad,
+        arena.y + arena.h - pad,
+      );
+    }
     state.enemies.push({
       id: state.nextEnemyId++,
       alive: true,
@@ -590,6 +684,24 @@
       mineTimer: attackDelay(4),
       mines: [],
       orbitTimer: attackDelay(4),
+      history: [],
+      historyTimer: 0,
+      mirrorTimer: attackDelay(2.5),
+      timeHistory: [],
+      timeTimer: 0,
+      voidTimer: attackDelay(4),
+      voidPhase: "mark",
+      voidMarks: [],
+      teleportTimer: attackDelay(3),
+      splitterTimer: attackDelay(3),
+      predictorTimer: attackDelay(2.5),
+      pulseTimer: attackDelay(5),
+      pulseRadius: 0,
+      mimicTimer: attackDelay(3),
+      huntTimer: attackDelay(4),
+      huntPhase: "track",
+      huntTargetX: x,
+      huntTargetY: y,
     });
   }
   function attackDelay(base) {
@@ -608,6 +720,16 @@
         hunter: 42,
         mine: 52,
         orbiter: 52,
+        repeater: 74,
+        mirror: 60,
+        timekeeper: 55,
+        voidcaster: 48,
+        teleporter: 58,
+        splitter: 44,
+        predictor: 52,
+        pulsar: 42,
+        mimic: 62,
+        voidhunter: 50,
       }[e.type] || 60;
     return state.weaken === e.type ? b * 0.62 : b;
   }
@@ -807,6 +929,12 @@
       }
       b.x += b.vx * dt;
       b.y += b.vy * dt;
+      if (b.splitter && !b.splitDone && b.life < 3.9) {
+        b.splitDone = true;
+        const base = Math.atan2(b.vy, b.vx);
+        for (let k = -2; k <= 2; k++)
+          enemyBullet(b.x, b.y, base + k * 0.22, 215);
+      }
       b.life -= dt;
     }
     state.enemyShots = state.enemyShots.filter(
@@ -1083,6 +1211,187 @@
           });
         }
         e.orbitTimer = attackDelay(5);
+      }
+    } else if (e.type === "repeater") {
+      e.historyTimer += dt;
+      if (e.historyTimer >= 0.12) {
+        e.historyTimer = 0;
+        e.history.push({ x: p.x, y: p.y });
+        if (e.history.length > 55) e.history.shift();
+      }
+      if (e.history.length > 18) {
+        const t = e.history[Math.max(0, e.history.length - 18)];
+        const a = angleTo(e, t);
+        e.x += Math.cos(a) * enemySpeed(e) * dt;
+        e.y += Math.sin(a) * enemySpeed(e) * dt;
+      }
+      e.x = clamp(e.x, arena.x + 20, arena.x + arena.w - 20);
+      e.y = clamp(e.y, arena.y + 20, arena.y + arena.h - 20);
+      if (dist(p, e) < p.r + e.r && p.jump <= 0) {
+        if (hurtPlayer(e)) return;
+      }
+    } else if (e.type === "mirror") {
+      e.mirrorTimer -= dt;
+      const tx = arena.x + arena.w - (p.x - arena.x);
+      const ty = arena.y + arena.h - (p.y - arena.y);
+      const a = angleTo(e, { x: tx, y: ty });
+      e.x += Math.cos(a) * enemySpeed(e) * dt;
+      e.y += Math.sin(a) * enemySpeed(e) * dt;
+      e.x = clamp(e.x, arena.x + 20, arena.x + arena.w - 20);
+      e.y = clamp(e.y, arena.y + 20, arena.y + arena.h - 20);
+      if (e.mirrorTimer <= 0) {
+        enemyBullet(e.x, e.y, angleTo(e, p), 250);
+        e.mirrorTimer = attackDelay(2.5);
+      }
+      if (dist(p, e) < p.r + e.r && p.jump <= 0) {
+        if (hurtPlayer(e)) return;
+      }
+    } else if (e.type === "timekeeper") {
+      e.timeTimer += dt;
+      if (e.timeTimer >= 0.1) {
+        e.timeTimer = 0;
+        e.timeHistory.push({ x: p.x, y: p.y });
+        if (e.timeHistory.length > 80) e.timeHistory.shift();
+      }
+      e.x += Math.cos(e.angle) * enemySpeed(e) * 0.35 * dt;
+      e.y += Math.sin(e.angle) * enemySpeed(e) * 0.35 * dt;
+      e.x = clamp(e.x, arena.x + 25, arena.x + arena.w - 25);
+      e.y = clamp(e.y, arena.y + 25, arena.y + arena.h - 25);
+      if (e.timeHistory.length > 30) {
+        e.attack -= dt;
+        if (e.attack <= 0) {
+          const t = e.timeHistory[Math.max(0, e.timeHistory.length - 30)];
+          enemyBullet(e.x, e.y, angleTo(e, t), 235);
+          e.attack = attackDelay(2.5);
+        }
+      }
+    } else if (e.type === "voidcaster") {
+      e.voidTimer -= dt;
+      if (e.voidPhase === "mark" && e.voidTimer <= 0) {
+        e.voidMarks = [];
+        for (let k = 0; k < 4; k++) {
+          const a = Math.random() * TAU;
+          const d = rnd(70, 190);
+          e.voidMarks.push({
+            x: clamp(
+              p.x + Math.cos(a) * d,
+              arena.x + 35,
+              arena.x + arena.w - 35,
+            ),
+            y: clamp(
+              p.y + Math.sin(a) * d,
+              arena.y + 35,
+              arena.y + arena.h - 35,
+            ),
+          });
+        }
+        e.voidPhase = "detonate";
+        e.voidTimer = 1.4;
+      } else if (e.voidPhase === "detonate" && e.voidTimer <= 0) {
+        for (const m of e.voidMarks) {
+          for (let k = 0; k < 8; k++) enemyBullet(m.x, m.y, (k * TAU) / 8, 175);
+        }
+        e.voidPhase = "mark";
+        e.voidTimer = attackDelay(4);
+      }
+    } else if (e.type === "teleporter") {
+      e.teleportTimer -= dt;
+      if (e.teleportTimer <= 0) {
+        e.x = rnd(arena.x + 45, arena.x + arena.w - 45);
+        e.y = rnd(arena.y + 45, arena.y + arena.h - 45);
+        for (let k = -1; k <= 1; k++)
+          enemyBullet(e.x, e.y, e.angle + k * 0.2, 270);
+        e.teleportTimer = attackDelay(3);
+      }
+    } else if (e.type === "splitter") {
+      e.splitterTimer -= dt;
+      if (e.splitterTimer <= 0) {
+        state.enemyShots.push({
+          x: e.x + Math.cos(e.angle) * 24,
+          y: e.y + Math.sin(e.angle) * 24,
+          vx: Math.cos(e.angle) * 125,
+          vy: Math.sin(e.angle) * 125,
+          r: 12,
+          life: 5,
+          splitter: true,
+        });
+        e.splitterTimer = attackDelay(3.5);
+      }
+    } else if (e.type === "predictor") {
+      e.predictorTimer -= dt;
+      if (e.predictorTimer <= 0) {
+        const mx =
+          (keys.d || keys.arrowright ? 1 : 0) -
+          (keys.a || keys.arrowleft ? 1 : 0);
+        const my =
+          (keys.s || keys.arrowdown ? 1 : 0) - (keys.w || keys.arrowup ? 1 : 0);
+        const len = Math.hypot(mx, my) || 1;
+        const lead = 0.7;
+        const target = {
+          x: p.x + (mx / len) * 245 * lead,
+          y: p.y + (my / len) * 245 * lead,
+        };
+        enemyBullet(e.x, e.y, angleTo(e, target), 245);
+        e.predictorTimer = attackDelay(2.5);
+      }
+    } else if (e.type === "pulsar") {
+      e.pulseTimer -= dt;
+      if (e.pulseTimer <= 0 && e.pulseRadius <= 0) {
+        e.pulseRadius = 8;
+        e.pulseTimer = attackDelay(5);
+      }
+      if (e.pulseRadius > 0) {
+        e.pulseRadius += 210 * dt;
+        if (Math.abs(dist(p, e) - e.pulseRadius) < 16 && p.jump <= 0) {
+          if (hurtPlayer(e)) return;
+        }
+        if (e.pulseRadius > Math.max(arena.w, arena.h) * 1.25)
+          e.pulseRadius = 0;
+      }
+    } else if (e.type === "mimic") {
+      e.mimicTimer -= dt;
+      const a = angleTo(e, p);
+      e.x += Math.cos(a) * enemySpeed(e) * 0.55 * dt;
+      e.y += Math.sin(a) * enemySpeed(e) * 0.55 * dt;
+      if (e.mimicTimer <= 0) {
+        for (let k = -2; k <= 2; k++)
+          enemyBullet(e.x, e.y, e.angle + k * 0.18, 225);
+        e.mimicTimer = attackDelay(3);
+      }
+      if (dist(p, e) < p.r + e.r && p.jump <= 0) {
+        if (hurtPlayer(e)) return;
+      }
+    } else if (e.type === "voidhunter") {
+      if (e.huntPhase === "track") {
+        e.huntTimer -= dt;
+        e.x += Math.cos(e.angle) * enemySpeed(e) * dt;
+        e.y += Math.sin(e.angle) * enemySpeed(e) * dt;
+        if (e.huntTimer <= 0) {
+          e.huntTargetX = p.x;
+          e.huntTargetY = p.y;
+          e.huntPhase = "lunge";
+          e.huntTimer = 1.2;
+          e.angle = angleTo(e, { x: e.huntTargetX, y: e.huntTargetY });
+        }
+      } else {
+        e.x += Math.cos(e.angle) * 430 * dt;
+        e.y += Math.sin(e.angle) * 430 * dt;
+        if (dist(p, e) < p.r + e.r + 4 && p.jump <= 0) {
+          if (hurtPlayer(e)) return;
+        }
+        e.huntTimer -= dt;
+        if (
+          e.huntTimer <= 0 ||
+          e.x < arena.x - 100 ||
+          e.x > arena.x + arena.w + 100 ||
+          e.y < arena.y - 100 ||
+          e.y > arena.y + arena.h + 100
+        ) {
+          e.x = clamp(e.x, arena.x + 30, arena.x + arena.w - 30);
+          e.y = clamp(e.y, arena.y + 30, arena.y + arena.h - 30);
+          e.huntPhase = "track";
+          e.huntTimer = attackDelay(4);
+        }
       }
     }
   }
@@ -1368,6 +1677,52 @@
         ctx.fill();
         ctx.restore();
       }
+    }
+    if (e.type === "repeater") {
+      ctx.save();
+      ctx.strokeStyle = c + "66";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      const h = e.history || [];
+      if (h.length) {
+        ctx.moveTo(h[0].x, h[0].y);
+        for (let i = 1; i < h.length; i++) ctx.lineTo(h[i].x, h[i].y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    if (e.type === "voidcaster" && e.voidMarks) {
+      ctx.save();
+      for (const m of e.voidMarks) {
+        ctx.strokeStyle = c;
+        ctx.shadowColor = c;
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, 18, 0, TAU);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    if (e.type === "pulsar" && e.pulseRadius > 0) {
+      ctx.save();
+      ctx.strokeStyle = c;
+      ctx.lineWidth = 8;
+      ctx.shadowColor = c;
+      ctx.shadowBlur = 18;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.pulseRadius, 0, TAU);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (e.type === "voidhunter" && e.huntPhase === "lunge") {
+      ctx.save();
+      ctx.strokeStyle = c + "88";
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.moveTo(e.x, e.y);
+      ctx.lineTo(e.x - Math.cos(e.angle) * 90, e.y - Math.sin(e.angle) * 90);
+      ctx.stroke();
+      ctx.restore();
     }
     if (e.type === "sword") {
       const sx = e.swordX,
