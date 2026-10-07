@@ -48,6 +48,31 @@
       desc: "Keeps a sword at a fixed angle around you for 6 seconds, then gives a 1-second strike warning. Teleports every 5 seconds.",
       color: "#c15cff",
     },
+    dasher: {
+      name: "DASHER",
+      desc: "Locks onto your position, warns briefly, then makes a fast straight dash.",
+      color: "#ff7a3d",
+    },
+    burst: {
+      name: "BURST",
+      desc: "Fires a large radial burst of slow bullets, then waits for another opening.",
+      color: "#ffd23d",
+    },
+    hunter: {
+      name: "HUNTER",
+      desc: "Slowly follows you and becomes dangerous if it reaches you.",
+      color: "#4dff88",
+    },
+    mine: {
+      name: "MINE LAYER",
+      desc: "Drops armed mines that stay where they were placed until they trigger.",
+      color: "#55d9ff",
+    },
+    orbiter: {
+      name: "ORBITER",
+      desc: "Creates three orbiting shots that eventually break away and fly outward.",
+      color: "#8f7bff",
+    },
   };
   const upgradeDefs = {
     speed: { name: "SPEED", desc: "Move faster.", icon: "SPD" },
@@ -67,6 +92,31 @@
       desc: "Your shuriken becomes larger.",
       icon: "SIZ",
     },
+    rapid: {
+      name: "RAPID FIRE",
+      desc: "Reduce your 2-second shuriken cooldown by 0.25 seconds per level.",
+      icon: "RPD",
+    },
+    twin: {
+      name: "TWIN SHURIKEN",
+      desc: "Each shot fires two shuriken at a slight angle.",
+      icon: "TWN",
+    },
+    pierce: {
+      name: "PIERCE",
+      desc: "Your shuriken can pass through enemies and hit another one.",
+      icon: "PRC",
+    },
+    homing: {
+      name: "HOMING",
+      desc: "Your shuriken gently curves toward the nearest enemy.",
+      icon: "HOM",
+    },
+    range: {
+      name: "LONG RANGE",
+      desc: "Your shuriken stays in the arena longer before disappearing.",
+      icon: "RNG",
+    },
   };
   let W = 0,
     H = 0,
@@ -85,7 +135,17 @@
     shots: [],
     enemyShots: [],
     particles: [],
-    upgrades: { speed: 0, bullet: 0, jump: 0, size: 0 },
+    upgrades: {
+      speed: 0,
+      bullet: 0,
+      jump: 0,
+      size: 0,
+      rapid: 0,
+      twin: 0,
+      pierce: 0,
+      homing: 0,
+      range: 0,
+    },
     weaken: null,
     player: {
       x: 0,
@@ -228,6 +288,14 @@
     e.swordY = e.y;
     e.swordActive = false;
     e.wave = 0;
+    e.dashTimer = attackDelay(5);
+    e.dashPhase = "idle";
+    e.dashX = e.x;
+    e.dashY = e.y;
+    e.dashAngle = 0;
+    e.mineTimer = attackDelay(4);
+    e.mines = [];
+    e.orbitTimer = attackDelay(4);
   }
   function reviveAllEnemies() {
     for (const e of state.enemies) resetEnemyForRound(e);
@@ -287,15 +355,20 @@
     const p = state.player,
       a = p.angle,
       speed = 500 + state.upgrades.bullet * 80;
-    state.shots.push({
-      x: p.x + Math.cos(a) * 18,
-      y: p.y + Math.sin(a) * 18,
-      vx: Math.cos(a) * speed,
-      vy: Math.sin(a) * speed,
-      r: 5 + state.upgrades.size * 2,
-      life: 2,
-    });
-    p.cooldown = 2;
+    const spread = state.upgrades.twin ? 0.09 : 0;
+    for (const off of state.upgrades.twin ? [-spread, spread] : [0]) {
+      const aa = a + off;
+      state.shots.push({
+        x: p.x + Math.cos(aa) * 18,
+        y: p.y + Math.sin(aa) * 18,
+        vx: Math.cos(aa) * speed,
+        vy: Math.sin(aa) * speed,
+        r: 5 + state.upgrades.size * 2,
+        life: 2 + state.upgrades.range * 0.6,
+        pierces: state.upgrades.pierce,
+      });
+    }
+    p.cooldown = Math.max(0.35, 2 - state.upgrades.rapid * 0.25);
   }
   function showUpgrades() {
     state.mode = "upgrade";
@@ -334,7 +407,17 @@
     state.nextEnemyId = 1;
     state.shots = [];
     state.enemyShots = [];
-    state.upgrades = { speed: 0, bullet: 0, jump: 0, size: 0 };
+    state.upgrades = {
+      speed: 0,
+      bullet: 0,
+      jump: 0,
+      size: 0,
+      rapid: 0,
+      twin: 0,
+      pierce: 0,
+      homing: 0,
+      range: 0,
+    };
     state.weaken = null;
     resetPlayer();
     showAltar();
@@ -398,6 +481,14 @@
       swordY: y,
       swordActive: false,
       wave: 0,
+      dashTimer: attackDelay(5),
+      dashPhase: "idle",
+      dashX: x,
+      dashY: y,
+      dashAngle: 0,
+      mineTimer: attackDelay(4),
+      mines: [],
+      orbitTimer: attackDelay(4),
     });
   }
   function attackDelay(base) {
@@ -405,8 +496,18 @@
   }
   function enemySpeed(e) {
     const b =
-      { shooter: 70, shotgun: 62, beam: 58, shock: 45, sword: 65 }[e.type] ||
-      60;
+      {
+        shooter: 70,
+        shotgun: 62,
+        beam: 58,
+        shock: 45,
+        sword: 65,
+        dasher: 80,
+        burst: 48,
+        hunter: 42,
+        mine: 52,
+        orbiter: 52,
+      }[e.type] || 60;
     return state.weaken === e.type ? b * 0.62 : b;
   }
   function tryJump() {
@@ -456,6 +557,33 @@
     );
     if (mouse.down) firePlayer();
     for (const s of state.shots) {
+      if (state.upgrades.homing) {
+        let target = null,
+          best = Infinity;
+        for (const e of state.enemies)
+          if (e.alive) {
+            const d = dist(s, e);
+            if (d < best) {
+              best = d;
+              target = e;
+            }
+          }
+        if (target) {
+          const ta = angleTo(s, target),
+            ca = Math.atan2(s.vy, s.vx),
+            turn = Math.max(
+              -2.2 * dt,
+              Math.min(
+                2.2 * dt,
+                Math.atan2(Math.sin(ta - ca), Math.cos(ta - ca)),
+              ),
+            );
+          const na = ca + turn;
+          const sp = Math.hypot(s.vx, s.vy);
+          s.vx = Math.cos(na) * sp;
+          s.vy = Math.sin(na) * sp;
+        }
+      }
       s.x += s.vx * dt;
       s.y += s.vy * dt;
       s.life -= dt;
@@ -470,6 +598,17 @@
     );
     for (const e of state.enemies) if (e.alive) updateEnemy(e, dt);
     for (const b of state.enemyShots) {
+      if (b.orbit && b.orbitEnemy && b.orbitEnemy.alive) {
+        b.orbitAngle += b.orbitSpeed * dt;
+        b.orbitTime -= dt;
+        b.x = b.orbitEnemy.x + Math.cos(b.orbitAngle) * b.orbitRadius;
+        b.y = b.orbitEnemy.y + Math.sin(b.orbitAngle) * b.orbitRadius;
+        if (b.orbitTime <= 0) {
+          b.orbit = false;
+          b.vx = Math.cos(b.orbitAngle) * b.releaseSpeed;
+          b.vy = Math.sin(b.orbitAngle) * b.releaseSpeed;
+        }
+      }
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       b.life -= dt;
@@ -477,10 +616,10 @@
     state.enemyShots = state.enemyShots.filter(
       (b) =>
         b.life > 0 &&
-        b.x > arena.x - 60 &&
-        b.x < arena.x + arena.w + 60 &&
-        b.y > arena.y - 60 &&
-        b.y < arena.y + arena.h + 60,
+        b.x > arena.x - 100 &&
+        b.x < arena.x + arena.w + 100 &&
+        b.y > arena.y - 100 &&
+        b.y < arena.y + arena.h + 100,
     );
     for (const e of state.enemies) {
       if (!e.alive) continue;
@@ -489,7 +628,8 @@
           for (let k = 0; k < 10; k++)
             particle(e.x, e.y, enemyDefs[e.type].color, 0.45);
           e.alive = false;
-          state.shots.splice(j, 1);
+          if (state.shots[j].pierces > 0) state.shots[j].pierces--;
+          else state.shots.splice(j, 1);
           break;
         }
     }
@@ -666,6 +806,92 @@
           e.swordAngle = rnd(-Math.PI, Math.PI);
         }
       }
+    } else if (e.type === "dasher") {
+      if (e.dashPhase === "idle") {
+        e.dashTimer -= dt;
+        if (e.dashTimer <= 0) {
+          e.dashPhase = "warn";
+          e.dashTimer = 1;
+          e.dashX = p.x;
+          e.dashY = p.y;
+          e.dashAngle = angleTo(e, { x: e.dashX, y: e.dashY });
+        }
+      } else if (e.dashPhase === "warn") {
+        e.dashTimer -= dt;
+        if (e.dashTimer <= 0) e.dashPhase = "dash";
+      } else {
+        const sp = enemySpeed(e) * 5;
+        e.x += Math.cos(e.dashAngle) * sp * dt;
+        e.y += Math.sin(e.dashAngle) * sp * dt;
+        if (dist(p, e) < p.r + e.r && p.jump <= 0) {
+          die();
+          return;
+        }
+        if (
+          e.x < arena.x - 80 ||
+          e.x > arena.x + arena.w + 80 ||
+          e.y < arena.y - 80 ||
+          e.y > arena.y + arena.h + 80
+        ) {
+          e.x = clamp(e.x, arena.x + 30, arena.x + arena.w - 30);
+          e.y = clamp(e.y, arena.y + 30, arena.y + arena.h - 30);
+          e.dashPhase = "idle";
+          e.dashTimer = attackDelay(5);
+        }
+      }
+    } else if (e.type === "burst") {
+      e.attack -= dt;
+      if (e.attack <= 0) {
+        for (let k = 0; k < 12; k++) enemyBullet(e.x, e.y, (k * TAU) / 12, 155);
+        e.attack = attackDelay(5);
+      }
+    } else if (e.type === "hunter") {
+      const a = angleTo(e, p),
+        sp = enemySpeed(e);
+      e.x += Math.cos(a) * sp * dt;
+      e.y += Math.sin(a) * sp * dt;
+      e.x = clamp(e.x, arena.x + 25, arena.x + arena.w - 25);
+      e.y = clamp(e.y, arena.y + 25, arena.y + arena.h - 25);
+      if (dist(p, e) < p.r + e.r && p.jump <= 0) {
+        die();
+        return;
+      }
+    } else if (e.type === "mine") {
+      e.mineTimer -= dt;
+      if (e.mineTimer <= 0) {
+        e.mines.push({ x: e.x, y: e.y, life: 12 });
+        e.mineTimer = attackDelay(4);
+      }
+      for (const m of e.mines) m.life -= dt;
+      e.mines = e.mines.filter((m) => m.life > 0);
+      for (const m of e.mines)
+        if (dist(p, m) < 28 && p.jump <= 0) {
+          die();
+          return;
+        }
+    } else if (e.type === "orbiter") {
+      e.orbitTimer -= dt;
+      if (e.orbitTimer <= 0) {
+        for (let k = 0; k < 3; k++) {
+          const a = e.angle + (k * TAU) / 3;
+          state.enemyShots.push({
+            x: e.x + Math.cos(a) * 42,
+            y: e.y + Math.sin(a) * 42,
+            vx: 0,
+            vy: 0,
+            r: 7,
+            life: 8,
+            orbit: true,
+            orbitEnemy: e,
+            orbitAngle: a,
+            orbitSpeed: 1.8,
+            orbitRadius: 42,
+            orbitTime: 2.5,
+            releaseSpeed: 190,
+          });
+        }
+        e.orbitTimer = attackDelay(5);
+      }
     }
   }
   function pointBeamHit(p, e, a) {
@@ -825,6 +1051,45 @@
       ctx.strokeStyle = "#fff";
       ctx.lineWidth = 2;
       ctx.stroke();
+    } else if (e.type === "dasher") {
+      ctx.rotate(e.dashAngle);
+      ctx.beginPath();
+      ctx.moveTo(22, 0);
+      ctx.lineTo(-16, -13);
+      ctx.lineTo(-8, 0);
+      ctx.lineTo(-16, 13);
+      ctx.closePath();
+      ctx.fill();
+    } else if (e.type === "burst") {
+      ctx.beginPath();
+      ctx.arc(0, 0, 19, 0, TAU);
+      ctx.fill();
+      for (let k = 0; k < 8; k++) {
+        const a = (k * TAU) / 8;
+        ctx.fillRect(Math.cos(a) * 24 - 3, Math.sin(a) * 24 - 3, 6, 6);
+      }
+    } else if (e.type === "hunter") {
+      ctx.beginPath();
+      ctx.arc(0, 0, 18, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = "#06140b";
+      ctx.beginPath();
+      ctx.arc(0, 0, 7, 0, TAU);
+      ctx.fill();
+    } else if (e.type === "mine") {
+      ctx.rotate(Math.PI / 4);
+      ctx.fillRect(-16, -16, 32, 32);
+      ctx.fillStyle = "#06121a";
+      ctx.fillRect(-6, -6, 12, 12);
+    } else if (e.type === "orbiter") {
+      ctx.beginPath();
+      ctx.arc(0, 0, 16, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, 27, 0, TAU);
+      ctx.stroke();
     } else {
       ctx.rotate(Math.PI / 4);
       ctx.fillRect(-16, -16, 32, 32);
@@ -868,6 +1133,34 @@
       ctx.arc(e.x, e.y, e.wave, 0, TAU);
       ctx.stroke();
       ctx.restore();
+    }
+    if (e.type === "dasher" && e.dashPhase === "warn") {
+      ctx.save();
+      ctx.strokeStyle = "#ff7a3d";
+      ctx.setLineDash([8, 8]);
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(e.x, e.y);
+      ctx.lineTo(e.dashX, e.dashY);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (e.type === "mine") {
+      for (const m of e.mines) {
+        ctx.save();
+        ctx.translate(m.x, m.y);
+        ctx.strokeStyle = "#55d9ff";
+        ctx.shadowColor = "#55d9ff";
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.arc(0, 0, 13, 0, TAU);
+        ctx.stroke();
+        ctx.fillStyle = "#55d9ff";
+        ctx.beginPath();
+        ctx.arc(0, 0, 4, 0, TAU);
+        ctx.fill();
+        ctx.restore();
+      }
     }
     if (e.type === "sword") {
       const sx = e.swordX,
