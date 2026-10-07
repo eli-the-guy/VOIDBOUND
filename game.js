@@ -538,7 +538,7 @@
         pierces: state.upgrades.pierce,
       });
     }
-    p.cooldown = Math.max(0.35, 1 - state.upgrades.rapid * 0.25);
+    p.cooldown = Math.max(0.35, 0.5 - state.upgrades.rapid * 0.1);
   }
   function showUpgrades() {
     state.mode = "upgrade";
