@@ -151,7 +151,7 @@
     },
     rapid: {
       name: "RAPID FIRE",
-      desc: "Reduce your 2-second shuriken cooldown by 0.25 seconds per level.",
+      desc: "Reduce your 0.50-second shuriken cooldown by 0.10 seconds per level.",
       icon: "RPD",
     },
     twin: {
