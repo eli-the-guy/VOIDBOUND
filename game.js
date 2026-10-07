@@ -172,6 +172,7 @@
     state.player = {
       x: W / 2,
       y: H / 2,
+      r: 14,
       angle: 0,
       jump: 0,
       jumpMax: 0.8 + state.upgrades.jump * 0.3,
@@ -204,19 +205,28 @@
   }
   function resetEnemyForRound(e) {
     e.alive = true;
-    e.attack = 2;
+    e.attack = attackDelay(2);
     e.shotAngle = rnd(-Math.PI, Math.PI);
     e.angle = rnd(-Math.PI, Math.PI);
     e.phase = e.type === "beam" ? "cool" : e.type === "shock" ? "idle" : "idle";
-    e.phaseTimer = e.type === "beam" ? 10 : e.type === "shock" ? 5 : 0;
+    e.phaseTimer =
+      e.type === "beam"
+        ? attackDelay(10)
+        : e.type === "shock"
+          ? attackDelay(5)
+          : 0;
     e.beamProgress = 0;
     e.targetX = e.x;
     e.targetY = e.y;
     e.jumpScale = 1;
     e.swordAngle = rnd(-Math.PI, Math.PI);
     e.swordTimer = 0;
+    e.swordDelay = attackDelay(6);
     e.teleport = 5;
     e.strikeTimer = 0;
+    e.swordX = e.x;
+    e.swordY = e.y;
+    e.swordActive = false;
     e.wave = 0;
   }
   function reviveAllEnemies() {
@@ -366,20 +376,32 @@
       y,
       r: 18,
       angle: rnd(-Math.PI, Math.PI),
-      attack: 2,
+      attack: attackDelay(2),
       shotAngle: rnd(-Math.PI, Math.PI),
       phase: type === "beam" ? "cool" : type === "shock" ? "idle" : "idle",
-      phaseTimer: type === "beam" ? 10 : type === "shock" ? 5 : 0,
+      phaseTimer:
+        type === "beam"
+          ? attackDelay(10)
+          : type === "shock"
+            ? attackDelay(5)
+            : 0,
       beamProgress: 0,
       targetX: x,
       targetY: y,
       jumpScale: 1,
       swordAngle: rnd(-Math.PI, Math.PI),
       swordTimer: 0,
+      swordDelay: attackDelay(6),
       teleport: 5,
       strikeTimer: 0,
+      swordX: x,
+      swordY: y,
+      swordActive: false,
       wave: 0,
     });
+  }
+  function attackDelay(base) {
+    return Math.max(0.2, base + rnd(-2, 2));
   }
   function enemySpeed(e) {
     const b =
@@ -499,7 +521,7 @@
       e.attack -= dt;
       if (e.attack <= 0) {
         enemyBullet(e.x, e.y, e.angle, 205);
-        e.attack = 2;
+        e.attack = attackDelay(2);
       }
     } else if (e.type === "shotgun") {
       e.attack -= dt;
@@ -507,7 +529,7 @@
         for (let k = -1; k <= 1; k++)
           enemyBullet(e.x, e.y, e.shotAngle + k * 0.28, 185);
         e.shotAngle += Math.PI / 4;
-        e.attack = 2;
+        e.attack = attackDelay(2);
       }
     } else if (e.type === "beam") {
       // The BEAM enemy itself is stationary. The beam hazard is what travels.
@@ -515,7 +537,7 @@
         e.phaseTimer -= dt;
         if (e.phaseTimer <= 0) {
           e.phase = "warn";
-          e.phaseTimer = 3;
+          e.phaseTimer = attackDelay(3);
           e.lockedAngle = angleTo(e, p);
           e.beamProgress = 0;
         }
@@ -525,7 +547,7 @@
         e.phaseTimer -= dt;
         if (e.phaseTimer <= 0) {
           e.phase = "fire";
-          e.phaseTimer = 3;
+          e.phaseTimer = attackDelay(3);
           e.beamProgress = 0;
         }
       } else if (e.phase === "fire") {
@@ -541,7 +563,7 @@
         e.phaseTimer -= dt;
         if (e.phaseTimer <= 0) {
           e.phase = "cool";
-          e.phaseTimer = 10;
+          e.phaseTimer = attackDelay(10);
           e.beamProgress = 0;
         }
       } else if (e.phase === "cool") {
@@ -556,7 +578,7 @@
         e.phaseTimer -= dt;
         if (e.phaseTimer <= 0) {
           e.phase = "jump";
-          e.phaseTimer = 2;
+          e.phaseTimer = attackDelay(2);
           e.targetX = rnd(arena.x + 60, arena.x + arena.w - 60);
           e.targetY = rnd(arena.y + 60, arena.y + arena.h - 60);
           e.jumpScale = 1;
@@ -587,7 +609,7 @@
         if (Math.abs(dist(p, e) - e.wave) < 14 && p.jump <= 0) die();
         if (e.wave > Math.max(arena.w, arena.h) * 1.25) {
           e.phase = "idle";
-          e.phaseTimer = 5;
+          e.phaseTimer = attackDelay(5);
         }
       }
     } else if (e.type === "sword") {
@@ -601,23 +623,46 @@
       }
       if (e.phase === "idle") {
         e.swordTimer += dt;
+        // While waiting, keep the smaller sword just outside the player.
+        e.swordX = p.x - Math.cos(e.swordAngle) * 100;
+        e.swordY = p.y - Math.sin(e.swordAngle) * 100;
         if (e.swordTimer >= 6) {
           e.phase = "windup";
           e.phaseTimer = 1;
         }
-      } else {
+      } else if (e.phase === "windup") {
+        e.swordX = p.x - Math.cos(e.swordAngle) * 100;
+        e.swordY = p.y - Math.sin(e.swordAngle) * 100;
         e.phaseTimer -= dt;
         if (e.phaseTimer <= 0) {
-          const sx = p.x + Math.cos(e.swordAngle) * 115,
-            sy = p.y + Math.sin(e.swordAngle) * 115;
-          const a = e.swordAngle,
-            dx = p.x - sx,
-            dy = p.y - sy;
-          const forward = dx * Math.cos(a) + dy * Math.sin(a),
-            side = Math.abs(dx * Math.sin(a) - dy * Math.cos(a));
-          if (forward > 0 && forward < 190 && side < 22 && p.jump <= 0) die();
+          e.phase = "strike";
+          e.swordActive = true;
+        }
+      } else if (e.phase === "strike") {
+        // Once it attacks, the sword leaves the player and travels in the direction it points.
+        const speed = 300;
+        e.swordX += Math.cos(e.swordAngle) * speed * dt;
+        e.swordY += Math.sin(e.swordAngle) * speed * dt;
+        const dx = p.x - e.swordX,
+          dy = p.y - e.swordY;
+        const along = dx * Math.cos(e.swordAngle) + dy * Math.sin(e.swordAngle);
+        const side = Math.abs(
+          dx * Math.sin(e.swordAngle) - dy * Math.cos(e.swordAngle),
+        );
+        if (along >= -80 && along <= 10 && side < 16 && p.jump <= 0) {
+          die();
+          return;
+        }
+        if (
+          e.swordX < arena.x - 120 ||
+          e.swordX > arena.x + arena.w + 120 ||
+          e.swordY < arena.y - 120 ||
+          e.swordY > arena.y + arena.h + 120
+        ) {
           e.phase = "idle";
+          e.swordActive = false;
           e.swordTimer = 0;
+          e.swordDelay = attackDelay(6);
           e.swordAngle = rnd(-Math.PI, Math.PI);
         }
       }
@@ -825,27 +870,29 @@
       ctx.restore();
     }
     if (e.type === "sword") {
-      const sx = state.player.x + Math.cos(e.swordAngle) * 115,
-        sy = state.player.y + Math.sin(e.swordAngle) * 115;
+      const sx = e.swordX,
+        sy = e.swordY;
       ctx.save();
       ctx.translate(sx, sy);
       ctx.rotate(e.swordAngle);
       ctx.strokeStyle = "#f7cfff";
-      ctx.lineWidth = e.phase === "windup" ? 10 : 6;
+      ctx.lineWidth = e.phase === "windup" ? 6 : 4;
       ctx.shadowColor = "#ff2bd6";
-      ctx.shadowBlur = 15;
+      ctx.shadowBlur = 12;
       ctx.beginPath();
-      ctx.moveTo(-18, 0);
-      ctx.lineTo(175, 0);
+      ctx.moveTo(0, 0);
+      ctx.lineTo(80, 0);
       ctx.stroke();
       ctx.restore();
-      ctx.save();
-      ctx.strokeStyle = "#ff2bd655";
-      ctx.setLineDash([5, 8]);
-      ctx.beginPath();
-      ctx.arc(state.player.x, state.player.y, 115, 0, TAU);
-      ctx.stroke();
-      ctx.restore();
+      if (e.phase !== "strike") {
+        ctx.save();
+        ctx.strokeStyle = "#ff2bd655";
+        ctx.setLineDash([5, 8]);
+        ctx.beginPath();
+        ctx.arc(state.player.x, state.player.y, 100, 0, TAU);
+        ctx.stroke();
+        ctx.restore();
+      }
     }
   }
   function drawShot(s) {
