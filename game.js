@@ -151,7 +151,7 @@
     },
     rapid: {
       name: "RAPID FIRE",
-      desc: "Reduce your 2-second shuriken cooldown by 0.25 seconds per level.",
+      desc: "Reduce your 0.5-second shuriken cooldown by 0.10 seconds per level.",
       icon: "RPD",
     },
     twin: {
@@ -697,7 +697,7 @@
       state.shots.push(shot);
       if (state.upgrades.echo) state.echoQueue.push({ ...shot, delay: 0.32 });
     }
-    p.cooldown = Math.max(0.35, 2 - state.upgrades.rapid * 0.25);
+    p.cooldown = Math.max(0.35, 0.5 - state.upgrades.rapid * 0.1);
   }
   // ===== INTEGRATED CHOICE SYSTEM =====
   // Chains and upgrades are part of the normal round progression. They do not
