@@ -174,6 +174,103 @@
       desc: "Your shuriken stays in the arena longer before disappearing.",
       icon: "RNG",
     },
+    shrink: {
+      name: "SHRINK",
+      desc: "Slightly shrinks the player, enemies, and bullets, making the arena feel bigger.",
+      icon: "SHR",
+    },
+    triple: {
+      name: "TRIPLE SHURIKEN",
+      desc: "Each shot fires three shuriken in a tight spread.",
+      icon: "TRI",
+    },
+    ricochet: {
+      name: "RICOCHET",
+      desc: "Your shuriken can bounce off the arena walls before disappearing.",
+      icon: "RCH",
+    },
+    bulletTime: {
+      name: "BULLET TIME",
+      desc: "Enemy bullets move slower, giving you more room to dodge.",
+      icon: "TIM",
+    },
+    overclock: {
+      name: "OVERCLOCK",
+      desc: "Boosts your firing cycle and projectile speed together.",
+      icon: "OVR",
+    },
+    megashot: {
+      name: "MEGASHOT",
+      desc: "Your shuriken gets substantially larger without changing its speed.",
+      icon: "MEG",
+    },
+    phasejump: {
+      name: "PHASE JUMP",
+      desc: "Jump lasts longer and gives you a stronger escape window.",
+      icon: "PHJ",
+    },
+    seeker: {
+      name: "SEEKER",
+      desc: "Your shuriken homes toward enemies more aggressively.",
+      icon: "SEK",
+    },
+    scatter: {
+      name: "SCATTER",
+      desc: "Your shuriken periodically releases two smaller side shots while flying.",
+      icon: "SCT",
+    },
+  };
+  const chainDefs = {
+    frenzy: {
+      name: "FRENZY",
+      desc: "Enemies act faster. Their movement and attack processing are accelerated.",
+      icon: "FZY",
+    },
+    hotshot: {
+      name: "HOTSHOT",
+      desc: "Enemy bullets travel faster and become harder to outrun.",
+      icon: "HOT",
+    },
+    swarm: {
+      name: "SWARM",
+      desc: "Each new round adds one extra enemy to the stack.",
+      icon: "SWM",
+    },
+    giant: {
+      name: "GIANTS",
+      desc: "All enemies become larger and their collision zones grow with them.",
+      icon: "GNT",
+    },
+    barrage: {
+      name: "BARRAGE",
+      desc: "Enemy projectiles become larger, leaving less room between hazards.",
+      icon: "BRG",
+    },
+    drag: {
+      name: "DRAG",
+      desc: "Your movement speed is reduced, making positioning more important.",
+      icon: "DRG",
+    },
+    heavygravity: {
+      name: "HEAVY GRAVITY",
+      desc: "Your jumps are shorter, reducing your safe time above hazards.",
+      icon: "GRV",
+    },
+    jammed: {
+      name: "JAMMED",
+      desc: "Your shuriken firing cycle becomes slower.",
+      icon: "JAM",
+    },
+    relentless: {
+      name: "RELENTLESS",
+      desc: "Enemies recover from their attacks faster and spend less time waiting.",
+      icon: "RLS",
+    },
+    pressure: {
+      name: "PRESSURE",
+      desc: "Every enemy added from now on receives a small speed boost.",
+      icon: "PRS",
+    },
   };
   let W = 0,
     H = 0,
@@ -203,7 +300,29 @@
       pierce: 0,
       homing: 0,
       range: 0,
+      shrink: 0,
+      triple: 0,
+      ricochet: 0,
+      bulletTime: 0,
+      overclock: 0,
+      megashot: 0,
+      phasejump: 0,
+      seeker: 0,
+      scatter: 0,
     },
+    chains: {
+      frenzy: 0,
+      hotshot: 0,
+      swarm: 0,
+      giant: 0,
+      barrage: 0,
+      drag: 0,
+      heavygravity: 0,
+      jammed: 0,
+      relentless: 0,
+      pressure: 0,
+    },
+    pendingChain: false,
     weaken: null,
     player: {
       x: 0,
@@ -265,7 +384,8 @@
     playerDom.style.left = state.player.x + "px";
     playerDom.style.top = state.player.y + "px";
     playerDom.style.display = state.mode === "start" ? "none" : "block";
-    playerDom.style.transform = `translate(-50%,-50%) scale(${state.player.jump > 0 ? 1.18 : 1})`;
+    const shrinkScale = Math.pow(0.92, state.upgrades.shrink);
+    playerDom.style.transform = `translate(-50%,-50%) scale(${shrinkScale * (state.player.jump > 0 ? 1.18 : 1)})`;
     document.querySelector(".player-direction").style.transform =
       `rotate(${state.player.angle}rad)`;
     for (let i = 0; i < 2; i++)
@@ -297,8 +417,15 @@
       r: 14,
       angle: 0,
       jump: 0,
-      jumpMax: 0.8 + state.upgrades.jump * 0.3,
+      jumpMax: Math.max(
+        0.25,
+        0.8 +
+          state.upgrades.jump * 0.3 +
+          state.upgrades.phasejump * 0.25 -
+          state.chains.heavygravity * 0.12,
+      ),
       cooldown: 0,
+      invincible: 3,
       alive: true,
     };
     updateDOM();
@@ -524,25 +651,48 @@
     if (state.player.cooldown > 0) return;
     const p = state.player,
       a = p.angle,
-      speed = 500 + state.upgrades.bullet * 80;
-    const spread = state.upgrades.twin ? 0.09 : 0;
-    for (const off of state.upgrades.twin ? [-spread, spread] : [0]) {
+      speed = 500 + state.upgrades.bullet * 80 + state.upgrades.overclock * 45;
+    let offsets = [0];
+    if (state.upgrades.triple) offsets = [-0.13, 0, 0.13];
+    else if (state.upgrades.twin) offsets = [-0.09, 0.09];
+    for (const off of offsets) {
       const aa = a + off;
       state.shots.push({
         x: p.x + Math.cos(aa) * 18,
         y: p.y + Math.sin(aa) * 18,
         vx: Math.cos(aa) * speed,
         vy: Math.sin(aa) * speed,
-        r: 5 + state.upgrades.size * 2,
+        r: 5 + state.upgrades.size * 2 + state.upgrades.megashot * 3,
         life: 2 + state.upgrades.range * 0.6,
         pierces: state.upgrades.pierce,
+        bounces: state.upgrades.ricochet,
+        scatterTimer: state.upgrades.scatter ? 0.35 : -1,
+        scatterLevel: state.upgrades.scatter,
       });
     }
-    p.cooldown = Math.max(0.35, 2 - state.upgrades.rapid * 0.25);
+    p.cooldown = Math.max(
+      0.25,
+      2 -
+        state.upgrades.rapid * 0.25 -
+        state.upgrades.overclock * 0.12 +
+        state.chains.jammed * 0.25,
+    );
+  }
+  function setUpgradeScreenHeader(title, hint) {
+    const heading = upgradeScreen.querySelector(
+      "h2, h3, .title, .screen-title",
+    );
+    if (heading) heading.textContent = title;
+    const hintEl = upgradeScreen.querySelector("p");
+    if (hintEl) hintEl.textContent = hint;
   }
   function showUpgrades() {
     state.mode = "upgrade";
     upgradeChoices.innerHTML = "";
+    setUpgradeScreenHeader(
+      "CHOOSE AN UPGRADE",
+      "Choose one permanent upgrade.",
+    );
     Object.keys(upgradeDefs)
       .sort(() => Math.random() - 0.5)
       .slice(0, 3)
@@ -558,15 +708,63 @@
     altarScreen.style.display = "none";
     updateDOM();
   }
+  function showChain() {
+    state.mode = "chain";
+    upgradeChoices.innerHTML = "";
+    setUpgradeScreenHeader(
+      "CHOOSE A CHAIN",
+      "Chains make survival harder or empower the enemies. The effect is permanent.",
+    );
+    Object.keys(chainDefs)
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 3)
+      .forEach((k) => {
+        const u = chainDefs[k],
+          c = document.createElement("div");
+        c.className = "choice";
+        c.innerHTML = `<div class="tag">CHAIN ${u.icon}</div><div class="name">${u.name}</div><div class="desc">${u.desc}</div>`;
+        c.onclick = () => chooseChain(k);
+        upgradeChoices.appendChild(c);
+      });
+    upgradeScreen.classList.remove("hidden");
+    altarScreen.style.display = "none";
+    updateDOM();
+  }
   function chooseUpgrade(k) {
     state.upgrades[k]++;
     if (k === "classcore") state.classCore = state.upgrades.classcore;
     upgradeScreen.classList.add("hidden");
     if (k === "weaken") state.weaken = state.selectedEnemy;
-    if (k === "jump") state.player.jumpMax = 0.8 + state.upgrades.jump * 0.3;
+    if (k === "jump" || k === "phasejump")
+      state.player.jumpMax = Math.max(
+        0.25,
+        0.8 +
+          state.upgrades.jump * 0.3 +
+          state.upgrades.phasejump * 0.25 -
+          state.chains.heavygravity * 0.12,
+      );
     state.level++;
     state.round++;
     showMessage(upgradeDefs[k].name + " ACQUIRED");
+    if (state.pendingChain) {
+      state.pendingChain = false;
+      showChain();
+    } else {
+      startLevel();
+    }
+  }
+  function chooseChain(k) {
+    state.chains[k]++;
+    upgradeScreen.classList.add("hidden");
+    showMessage("CHAIN " + chainDefs[k].name + " ACCEPTED");
+    if (k === "heavygravity")
+      state.player.jumpMax = Math.max(
+        0.25,
+        0.8 +
+          state.upgrades.jump * 0.3 +
+          state.upgrades.phasejump * 0.25 -
+          state.chains.heavygravity * 0.12,
+      );
     startLevel();
   }
   function startGame() {
@@ -589,7 +787,29 @@
       pierce: 0,
       homing: 0,
       range: 0,
+      shrink: 0,
+      triple: 0,
+      ricochet: 0,
+      bulletTime: 0,
+      overclock: 0,
+      megashot: 0,
+      phasejump: 0,
+      seeker: 0,
+      scatter: 0,
     };
+    state.chains = {
+      frenzy: 0,
+      hotshot: 0,
+      swarm: 0,
+      giant: 0,
+      barrage: 0,
+      drag: 0,
+      heavygravity: 0,
+      jammed: 0,
+      relentless: 0,
+      pressure: 0,
+    };
+    state.pendingChain = false;
     state.weaken = null;
     state.className = null;
     state.classCore = 0;
@@ -623,7 +843,7 @@
     updateDOM();
   }
   function addEnemiesForLevel() {
-    const stack = 1 + Math.floor((state.level - 1) / 3);
+    const stack = 1 + Math.floor((state.level - 1) / 3) + state.chains.swarm;
     for (let i = 0; i < stack; i++) spawnEnemy(state.selectedEnemy);
   }
   function spawnEnemy(type) {
@@ -652,7 +872,7 @@
       type,
       x,
       y,
-      r: 18,
+      r: 18 * (1 + state.chains.giant * 0.1),
       angle: rnd(-Math.PI, Math.PI),
       attack: attackDelay(2),
       shotAngle: rnd(-Math.PI, Math.PI),
@@ -731,7 +951,10 @@
         mimic: 62,
         voidhunter: 50,
       }[e.type] || 60;
-    return state.weaken === e.type ? b * 0.62 : b;
+    let mult = 1;
+    if (state.weaken === e.type) mult *= 0.62;
+    mult *= 1 + state.chains.pressure * 0.08;
+    return b * mult;
   }
   function tryJump() {
     if (state.player.jump <= 0) state.player.jump = state.player.jumpMax;
@@ -740,9 +963,17 @@
     state.enemyShots.push({
       x: x + Math.cos(a) * 22,
       y: y + Math.sin(a) * 22,
-      vx: Math.cos(a) * speed,
-      vy: Math.sin(a) * speed,
-      r: 7,
+      vx:
+        Math.cos(a) *
+        speed *
+        (1 + state.chains.hotshot * 0.12) *
+        Math.max(0.35, 1 - state.upgrades.bulletTime * 0.1),
+      vy:
+        Math.sin(a) *
+        speed *
+        (1 + state.chains.hotshot * 0.12) *
+        Math.max(0.35, 1 - state.upgrades.bulletTime * 0.1),
+      r: 7 * (1 + state.chains.barrage * 0.1),
       life: 8,
     });
   }
@@ -775,6 +1006,7 @@
   function hurtPlayer(source) {
     const p = state.player,
       g = state.ghost;
+    if (p.invincible > 0) return false;
     if (g && g.active && g.hits > 0) {
       g.hits--;
       showMessage("GHOST HIT ABSORBED");
@@ -794,6 +1026,9 @@
       updateDOM();
       return;
     }
+    if (state.player.invincible > 0) {
+      state.player.invincible = Math.max(0, state.player.invincible - dt);
+    }
     const p = state.player;
     p.cooldown = Math.max(0, p.cooldown - dt);
     if (p.jump > 0) p.jump = Math.max(0, p.jump - dt);
@@ -804,7 +1039,9 @@
       my =
         (keys.s || keys.arrowdown ? 1 : 0) - (keys.w || keys.arrowup ? 1 : 0),
       len = Math.hypot(mx, my) || 1;
-    let sp = 245 + state.upgrades.speed * 35;
+    let sp =
+      (245 + state.upgrades.speed * 35) *
+      Math.max(0.35, 1 - state.chains.drag * 0.1);
     if (state.ghost.active) sp *= 0.62 + Math.min(0.25, state.classCore * 0.04);
     if (state.player.dashTime > 0) {
       state.player.dashTime -= dt;
@@ -839,7 +1076,29 @@
       state.ghost.cooldown = Math.max(0, state.ghost.cooldown - dt);
     if (mouse.down) firePlayer();
     for (const s of state.shots) {
-      if (state.upgrades.homing) {
+      if (s.scatterTimer >= 0) {
+        s.scatterTimer -= dt;
+        if (s.scatterTimer <= 0 && s.scatterLevel > 0) {
+          const base = Math.atan2(s.vy, s.vx);
+          for (const off of [-0.42, 0.42]) {
+            state.shots.push({
+              x: s.x,
+              y: s.y,
+              vx: Math.cos(base + off) * 390,
+              vy: Math.sin(base + off) * 390,
+              r: Math.max(3, s.r * 0.65),
+              life: 1.1,
+              pierces: 0,
+              bounces: 0,
+              scatterTimer: -1,
+              scatterLevel: 0,
+            });
+          }
+          s.scatterTimer = -1;
+          s.scatterLevel = 0;
+        }
+      }
+      if (state.upgrades.homing || state.upgrades.seeker) {
         let target = null,
           best = Infinity;
         for (const e of state.enemies)
@@ -854,9 +1113,9 @@
           const ta = angleTo(s, target),
             ca = Math.atan2(s.vy, s.vx),
             turn = Math.max(
-              -2.2 * dt,
+              -(2.2 + state.upgrades.seeker * 1.8) * dt,
               Math.min(
-                2.2 * dt,
+                (2.2 + state.upgrades.seeker * 1.8) * dt,
                 Math.atan2(Math.sin(ta - ca), Math.cos(ta - ca)),
               ),
             );
@@ -868,6 +1127,20 @@
       }
       s.x += s.vx * dt;
       s.y += s.vy * dt;
+      if (s.bounces > 0) {
+        let bounced = false;
+        if (s.x <= arena.x || s.x >= arena.x + arena.w) {
+          s.vx *= -1;
+          s.x = clamp(s.x, arena.x, arena.x + arena.w);
+          bounced = true;
+        }
+        if (s.y <= arena.y || s.y >= arena.y + arena.h) {
+          s.vy *= -1;
+          s.y = clamp(s.y, arena.y, arena.y + arena.h);
+          bounced = true;
+        }
+        if (bounced) s.bounces--;
+      }
       s.life -= dt;
     }
     state.shots = state.shots.filter(
@@ -914,7 +1187,9 @@
         p.y += Math.sin(a) * pull * dt;
       }
     }
-    for (const e of state.enemies) if (e.alive) updateEnemy(e, dt);
+    const enemyDt =
+      dt * (1 + state.chains.frenzy * 0.12 + state.chains.relentless * 0.08);
+    for (const e of state.enemies) if (e.alive) updateEnemy(e, enemyDt);
     for (const b of state.enemyShots) {
       if (b.orbit && b.orbitEnemy && b.orbitEnemy.alive) {
         b.orbitAngle += b.orbitSpeed * dt;
@@ -1425,7 +1700,9 @@
       if (token !== state.transitionToken || state.mode !== "between") return;
       state.level++;
       state.round = state.level;
+      state.pendingChain = state.level % 3 === 0;
       if (state.level % 5 === 0) showUpgrades();
+      else if (state.pendingChain) showChain();
       else showAltar();
     }, 650);
   }
@@ -1536,7 +1813,11 @@
     const c = enemyDefs[e.type].color;
     ctx.save();
     ctx.translate(e.x, e.y);
-    ctx.scale(e.jumpScale || 1, e.jumpScale || 1);
+    const visualScale = Math.pow(0.92, state.upgrades.shrink);
+    ctx.scale(
+      visualScale * (e.jumpScale || 1),
+      visualScale * (e.jumpScale || 1),
+    );
     ctx.shadowColor = c;
     ctx.shadowBlur = 22;
     ctx.fillStyle = c;
@@ -1756,7 +2037,7 @@
     ctx.shadowColor = "#ff2bd6";
     ctx.shadowBlur = 18;
     ctx.beginPath();
-    ctx.arc(s.x, s.y, s.r, 0, TAU);
+    ctx.arc(s.x, s.y, s.r * Math.pow(0.92, state.upgrades.shrink), 0, TAU);
     ctx.fill();
     ctx.restore();
   }
@@ -1766,7 +2047,7 @@
     ctx.shadowColor = "#ff2bd6";
     ctx.shadowBlur = 14;
     ctx.beginPath();
-    ctx.arc(b.x, b.y, b.r, 0, TAU);
+    ctx.arc(b.x, b.y, b.r * Math.pow(0.92, state.upgrades.shrink), 0, TAU);
     ctx.fill();
     ctx.restore();
   }
