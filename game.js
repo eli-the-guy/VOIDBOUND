@@ -1,1163 +1,1277 @@
-/*
-  VOIDBOUND — FULL REBUILD
-  Standalone game.js replacement.
-  This file intentionally does NOT use the old upgrade/chain menu code.
-  Chains and upgrades are first-class game states rendered by this file.
-*/
 (() => {
   "use strict";
-
-  const canvas =
-    document.getElementById("game") || document.querySelector("canvas");
-  if (!canvas) throw new Error("VOIDBOUND: #game canvas not found");
-  const ctx = canvas.getContext("2d");
-  const wrap = document.getElementById("gameWrap") || canvas.parentElement;
-
-  // Hide old overlays. This rebuild owns all menus itself.
-  for (const id of [
-    "startScreen",
-    "classScreen",
-    "altarScreen",
-    "upgradeScreen",
-    "gameOverScreen",
-  ]) {
-    const e = document.getElementById(id);
-    if (e) e.classList.add("hidden");
-  }
-
+  const canvas = document.getElementById("gameCanvas"),
+    ctx = canvas.getContext("2d"),
+    wrap = document.getElementById("gameWrap");
+  const playerDom = document.getElementById("playerDom"),
+    altarDoms = [
+      document.getElementById("altarDom1"),
+      document.getElementById("altarDom2"),
+    ];
+  const levelText = document.getElementById("levelText"),
+    roundText = document.getElementById("roundText"),
+    enemyText = document.getElementById("enemyText");
+  const altarScreen = document.getElementById("altarScreen"),
+    altarTitle = document.getElementById("altarTitle"),
+    altarHint = document.getElementById("altarHint"),
+    enemyChoices = document.getElementById("enemyChoices");
+  const classScreen = document.getElementById("classScreen"),
+    classChoices = document.getElementById("classChoices");
+  const upgradeScreen = document.getElementById("upgradeScreen"),
+    upgradeChoices = document.getElementById("upgradeChoices"),
+    startScreen = document.getElementById("startScreen"),
+    gameOverScreen = document.getElementById("gameOverScreen"),
+    gameOverText = document.getElementById("gameOverText"),
+    message = document.getElementById("message");
   const TAU = Math.PI * 2;
-  const keys = new Set();
-  const mouse = { x: 0, y: 0, down: false, inside: false };
-  let W = 900,
-    H = 650,
-    dpr = 1,
-    last = performance.now(),
-    raf = 0;
-
-  const ENEMIES = {
+  const enemyDefs = {
     shooter: {
       name: "SHOOTER",
-      desc: "Aims at you and fires a slow bullet every 2 seconds.",
-      color: "#ff4bd8",
-      hp: 1,
-      rate: 2,
+      desc: "Aims at the player and fires a slow bullet every 2 seconds.",
+      color: "#ff3dcc",
     },
     shotgun: {
       name: "SHOTGUN",
-      desc: "Fires 3 slow bullets. Rotates 45° after every shot.",
-      color: "#ff9de9",
-      hp: 1,
-      rate: 2,
+      desc: "Shoots slow-moving bullets in three directions every 2 seconds, then turns 45°.",
+      color: "#9b5cff",
     },
     beam: {
       name: "BEAM",
-      desc: "A slow tracking beam warns you, fires for 3 seconds, then cools for 10 seconds.",
-      color: "#d76bff",
-      hp: 1,
-      rate: 13,
+      desc: "The enemy stays still. It warns for 3 seconds, then sends a slow beam through the arena for 3 seconds, then cools down for 10 seconds.",
+      color: "#e83cff",
     },
     shock: {
       name: "SHOCK WAVE",
-      desc: "Jumps every 5 seconds, relocates while airborne, then releases a wave. Jump over it.",
-      color: "#a65cff",
-      hp: 1,
-      rate: 5,
+      desc: "Jumps every 5 seconds, takes 2 seconds to land, marks its destination, then sends a slow wave across the arena.",
+      color: "#ff67b7",
     },
     sword: {
       name: "SWORD MASTER",
-      desc: "A sword tracks around you for 6 seconds, then fires after a 1 second warning.",
-      color: "#ff65bc",
-      hp: 1,
-      rate: 6,
+      desc: "Keeps a sword at a fixed angle around you for 6 seconds, then gives a 1-second strike warning. Teleports every 5 seconds.",
+      color: "#c15cff",
     },
-    repeater: {
-      name: "REPEATER",
-      desc: "Copies the path you took a short time ago.",
-      color: "#38d9ff",
-      hp: 1,
-      rate: 2.4,
+    dasher: {
+      name: "DASHER",
+      desc: "Locks onto your position, warns briefly, then makes a fast straight dash.",
+      color: "#ff7a3d",
     },
-    splitter: {
-      name: "SPLITTER",
-      desc: "Fires a fast shot that splits into three smaller shots.",
-      color: "#ffcf55",
-      hp: 1,
-      rate: 2.7,
-    },
-    vortex: {
-      name: "VORTEX",
-      desc: "Creates a rotating pull field and periodically fires outward.",
-      color: "#8e7bff",
-      hp: 1,
-      rate: 4,
+    burst: {
+      name: "BURST",
+      desc: "Fires a large radial burst of slow bullets, then waits for another opening.",
+      color: "#ffd23d",
     },
     hunter: {
       name: "HUNTER",
-      desc: "Tracks your recent movement and lunges directly at you.",
-      color: "#ff5252",
-      hp: 1,
-      rate: 3.4,
+      desc: "Slowly follows you and becomes dangerous if it reaches you.",
+      color: "#4dff88",
     },
     mine: {
       name: "MINE LAYER",
-      desc: "Drops proximity mines around the arena.",
-      color: "#ff7b35",
-      hp: 1,
-      rate: 3.2,
+      desc: "Drops armed mines that stay where they were placed until they trigger.",
+      color: "#55d9ff",
     },
-    sniper: {
-      name: "SNIPER",
-      desc: "Locks your position, gives a long warning, then fires a lethal line shot.",
-      color: "#ffffff",
-      hp: 1,
-      rate: 6,
+    orbiter: {
+      name: "ORBITER",
+      desc: "Creates three orbiting shots that eventually break away and fly outward.",
+      color: "#8f7bff",
+    },
+    repeater: {
+      name: "REPEATER",
+      desc: "Spawns slightly behind you and copies the path you took a moment ago.",
+      color: "#ff4f8b",
     },
     mirror: {
       name: "MIRROR",
-      desc: "Creates a delayed copy of your movement and fires mirrored shots.",
-      color: "#e4a1ff",
-      hp: 1,
-      rate: 3,
+      desc: "Mirrors your position across the arena and attacks from the reflected side.",
+      color: "#7df9ff",
     },
-    orbit: {
-      name: "ORBITAL",
-      desc: "Circles the arena while releasing rotating projectiles.",
-      color: "#63b5ff",
-      hp: 1,
-      rate: 2.5,
+    timekeeper: {
+      name: "TIMEKEEPER",
+      desc: "Records where you were and fires toward an earlier position, punishing predictable movement.",
+      color: "#f7d354",
     },
-    gravity: {
-      name: "GRAVITY CORE",
-      desc: "Creates temporary gravity zones that slow your movement.",
-      color: "#a878ff",
-      hp: 1,
-      rate: 5,
+    voidcaster: {
+      name: "VOID CASTER",
+      desc: "Marks several locations around you, then detonates them with a radial burst.",
+      color: "#a56bff",
     },
-    laser: {
-      name: "LASER GRID",
-      desc: "Telegraphs a sweeping laser across the arena.",
-      color: "#ff3b91",
-      hp: 1,
-      rate: 4,
+    teleporter: {
+      name: "TELEPORTER",
+      desc: "Teleports around the arena and fires a rapid burst from each new position.",
+      color: "#4de8ff",
     },
-    phantom: {
-      name: "PHANTOM",
-      desc: "Teleports and leaves a delayed attack at its previous location.",
-      color: "#b9a0ff",
-      hp: 1,
-      rate: 3,
+    splitter: {
+      name: "SPLITTER",
+      desc: "Fires a heavy shot that splits into five dangerous projectiles.",
+      color: "#ff704d",
+    },
+    predictor: {
+      name: "PREDICTOR",
+      desc: "Leads its shots based on your current movement direction.",
+      color: "#65ff7a",
+    },
+    pulsar: {
+      name: "PULSAR",
+      desc: "Creates a growing shock ring that sweeps outward through the arena.",
+      color: "#c86bff",
+    },
+    mimic: {
+      name: "MIMIC",
+      desc: "Copies the attack style of the enemies already haunting the arena.",
+      color: "#ffffff",
+    },
+    voidhunter: {
+      name: "VOID HUNTER",
+      desc: "Tracks you, locks on, then launches a devastating long-range lunge.",
+      color: "#ff3b6b",
     },
   };
-  const ADVANCED = new Set([
-    "repeater",
-    "splitter",
-    "vortex",
-    "hunter",
-    "mine",
-    "sniper",
-    "mirror",
-    "orbit",
-    "gravity",
-    "laser",
-    "phantom",
-  ]);
-  const BASIC = ["shooter", "shotgun", "beam", "shock", "sword"];
-
-  const UPGRADES = {
-    speed: { name: "SPEED", desc: "+12% movement speed.", icon: "SPD" },
-    bullet: { name: "BULLET SPEED", desc: "+18% shuriken speed.", icon: "BUL" },
-    jump: {
-      name: "JUMP HEIGHT",
-      desc: "Longer jumps; increases your invulnerability window while airborne.",
-      icon: "JMP",
+  const upgradeDefs = {
+    classcore: {
+      name: "CLASS CORE",
+      desc: "Boosts your current class ability. DASHER: stronger dash. GRAPPLER: faster hook and pull. GHOST: faster ghost movement and shorter cooldown.",
+      icon: "CORE",
     },
+    speed: { name: "SPEED", desc: "Move faster.", icon: "SPD" },
+    bullet: {
+      name: "BULLET SPEED",
+      desc: "Your shuriken travels faster.",
+      icon: "SHR",
+    },
+    jump: { name: "JUMP HEIGHT", desc: "Stay airborne longer.", icon: "JMP" },
     weaken: {
       name: "WEAKEN",
-      desc: "One random enemy in the current stack becomes slower.",
+      desc: "One enemy type becomes slower.",
       icon: "WKN",
     },
     size: {
       name: "BULLET SIZE",
-      desc: "Shurikens become larger.",
+      desc: "Your shuriken becomes larger.",
       icon: "SIZ",
     },
     rapid: {
       name: "RAPID FIRE",
-      desc: "Reduces your 2 second firing cooldown.",
+      desc: "Reduce your 2-second shuriken cooldown by 0.25 seconds per level.",
       icon: "RPD",
     },
     twin: {
       name: "TWIN SHURIKEN",
-      desc: "Fires two slightly spread shurikens.",
-      icon: "2X",
+      desc: "Each shot fires two shuriken at a slight angle.",
+      icon: "TWN",
     },
     pierce: {
       name: "PIERCE",
-      desc: "Shurikens can pass through one extra enemy.",
+      desc: "Your shuriken can pass through enemies and hit another one.",
       icon: "PRC",
     },
     homing: {
       name: "HOMING",
-      desc: "Shurikens gently curve toward enemies.",
+      desc: "Your shuriken gently curves toward the nearest enemy.",
       icon: "HOM",
     },
     range: {
       name: "LONG RANGE",
-      desc: "Shurikens survive longer.",
+      desc: "Your shuriken stays in the arena longer before disappearing.",
       icon: "RNG",
     },
     triple: {
       name: "TRIPLE SHURIKEN",
-      desc: "Fires three shurikens in a tight spread.",
-      icon: "3X",
+      desc: "Each shot fires three shuriken in a tight spread.",
+      icon: "TRI",
     },
     bounce: {
       name: "VOID BOUNCE",
-      desc: "Shurikens bounce off arena walls.",
+      desc: "Your shuriken bounces off the arena walls.",
       icon: "BNC",
     },
     voidburst: {
       name: "VOID BURST",
-      desc: "Destroying an enemy creates a small outward burst.",
+      desc: "Destroying an enemy releases a small four-shot burst.",
       icon: "BST",
     },
     orbit: {
       name: "VOID ORBIT",
-      desc: "A damaging shuriken orbits you periodically.",
+      desc: "Orbiting blades circle you and destroy enemies they touch.",
       icon: "ORB",
     },
     echo: {
       name: "SHOT ECHO",
-      desc: "Each shot creates a delayed echo shot.",
+      desc: "A delayed echo shot follows each fired shot.",
       icon: "ECO",
     },
     time: {
       name: "TIME FRACTURE",
-      desc: "Enemy attack timers are slightly slowed.",
+      desc: "Enemies move slightly slower while your shuriken are active.",
       icon: "TIM",
     },
     phasejump: {
       name: "PHASE JUMP",
-      desc: "Jump lasts longer and gives stronger avoidance.",
-      icon: "PHZ",
+      desc: "Your jump lasts longer and becomes more forgiving.",
+      icon: "PHJ",
     },
     voidtrail: {
       name: "VOID TRAIL",
-      desc: "Movement leaves a short damaging trail.",
+      desc: "Moving leaves a trail that can destroy enemies.",
       icon: "TRL",
     },
     magnet: {
       name: "SHURIKEN MAGNET",
-      desc: "Shurikens curve more strongly toward enemies.",
+      desc: "Your shuriken homes toward enemies more strongly.",
       icon: "MAG",
     },
     shrink: {
       name: "SHRINK",
-      desc: "Shrinks enemies, bullets, and you, making the arena feel larger.",
+      desc: "Shrinks you, enemies, and bullets slightly, making the arena feel larger.",
       icon: "SML",
     },
-    classcore: {
-      name: "CLASS CORE",
-      desc: "Boosts your starting class ability.",
-      icon: "CLS",
-    },
   };
-  const NEW_UPGRADES = [
-    "triple",
-    "bounce",
-    "voidburst",
-    "orbit",
-    "echo",
-    "time",
-    "phasejump",
-    "voidtrail",
-    "magnet",
-    "shrink",
-  ];
-
-  const CHAINS = {
-    frenzy: { name: "FRENZY", desc: "Enemies attack 25% faster.", icon: "FZ" },
+  const chainDefs = {
+    frenzy: {
+      name: "ENEMY FRENZY",
+      desc: "All enemies move 15% faster.",
+      icon: "FRZ",
+    },
     overclock: {
       name: "OVERCLOCK",
-      desc: "Enemy projectiles move 25% faster.",
-      icon: "OC",
+      desc: "Enemy attacks recharge 18% faster.",
+      icon: "CLK",
     },
     bulletstorm: {
       name: "BULLETSTORM",
-      desc: "Enemies fire one extra projectile on attacks.",
-      icon: "BS",
+      desc: "Enemy bullets become 22% faster and slightly larger.",
+      icon: "BST",
     },
     swarm: {
       name: "SWARM",
-      desc: "Every newly chosen enemy adds one extra copy.",
-      icon: "SW",
+      desc: "Each new round adds one extra enemy to the stack.",
+      icon: "SWR",
     },
     closecall: {
       name: "CLOSE CALL",
-      desc: "Enemy attacks are less predictable.",
-      icon: "CC",
+      desc: "Enemies begin each round closer to you.",
+      icon: "CLC",
     },
     heavy: {
-      name: "HEAVY",
-      desc: "Enemies and their projectiles are larger.",
-      icon: "HV",
+      name: "HEAVY VOID",
+      desc: "Your movement speed is reduced by 12%.",
+      icon: "HVY",
     },
     fragile: {
-      name: "FRAGILE",
-      desc: "You have less jump forgiveness after landing.",
-      icon: "FR",
+      name: "FRAGILE REALITY",
+      desc: "Your jump duration is reduced by 20%.",
+      icon: "FRG",
     },
     relentless: {
       name: "RELENTLESS",
-      desc: "Enemy attack cooldown randomness is reduced.",
-      icon: "RL",
+      desc: "Living enemies recover their attack cycles 10% faster.",
+      icon: "RLS",
     },
     bloodrush: {
-      name: "BLOODRUSH",
-      desc: "Enemies speed up after another enemy dies.",
-      icon: "BR",
+      name: "BLOOD RUSH",
+      desc: "Enemies become 10% faster for each enemy defeated this round.",
+      icon: "BLD",
     },
     blackhole: {
       name: "BLACK HOLE",
-      desc: "A dangerous gravity well appears periodically.",
-      icon: "BH",
+      desc: "Enemy projectiles remain dangerous 25% longer.",
+      icon: "BLH",
     },
   };
-
-  const CLASSES = {
-    ninja: {
-      name: "NINJA",
-      desc: "Normal shuriken class. Balanced.",
-      color: "#ff4bd8",
-    },
-    dasher: {
-      name: "DASHER",
-      desc: "Press E to dash in your facing direction. Dashing into enemies kills them.",
-      color: "#ff9b55",
-    },
-    grappler: {
-      name: "GRAPPLER",
-      desc: "Your weapon is a grappling hook. Shoot to travel exactly to the cursor point.",
-      color: "#62d8ff",
-    },
-    ghost: {
-      name: "GHOST",
-      desc: "Press E to enter ghost form. You can tank one hit, move slower, then press E to return.",
-      color: "#b995ff",
-    },
-  };
-
+  let W = 0,
+    H = 0,
+    dpr = 1,
+    last = performance.now(),
+    mouse = { x: 0, y: 0, down: false },
+    keys = {};
   const state = {
     mode: "start",
-    round: 1,
     level: 1,
-    className: null,
-    classCore: 0,
-    altarOptions: [],
+    round: 1,
+    altarOptions: [null, null],
+    selectedEnemy: null,
     enemies: [],
-    nextId: 1,
+    nextEnemyId: 1,
     shots: [],
     enemyShots: [],
-    effects: [],
-    mines: [],
-    chains: Object.fromEntries(Object.keys(CHAINS).map((k) => [k, 0])),
-    upgrades: Object.fromEntries(Object.keys(UPGRADES).map((k) => [k, 0])),
+    particles: [],
+    echoQueue: [],
+    orbitBlades: [],
+    voidTrail: [],
+    upgrades: {
+      classcore: 0,
+      speed: 0,
+      bullet: 0,
+      jump: 0,
+      size: 0,
+      rapid: 0,
+      twin: 0,
+      pierce: 0,
+      homing: 0,
+      range: 0,
+      triple: 0,
+      bounce: 0,
+      voidburst: 0,
+      orbit: 0,
+      echo: 0,
+      time: 0,
+      phasejump: 0,
+      voidtrail: 0,
+      magnet: 0,
+      shrink: 0,
+    },
+    weaken: null,
+    chains: {
+      frenzy: 0,
+      overclock: 0,
+      bulletstorm: 0,
+      swarm: 0,
+      closecall: 0,
+      heavy: 0,
+      fragile: 0,
+      relentless: 0,
+      bloodrush: 0,
+      blackhole: 0,
+    },
+    bloodrushStacks: 0,
     pendingChain: false,
     pendingUpgrade: false,
-    transition: false,
     player: {
       x: 0,
       y: 0,
-      r: 14,
-      vx: 0,
-      vy: 0,
       angle: 0,
       jump: 0,
       jumpMax: 0.8,
-      inv: 0,
-      cool: 0,
+      cooldown: 0,
       alive: true,
-      dash: 0,
-      dashCd: 0,
-      ghost: false,
-      ghostCd: 0,
-      anchorX: 0,
-      anchorY: 0,
+      invincible: 0,
     },
-    history: [],
-    now: 0,
-    flash: 0,
-    deathReason: "",
-    message: "",
-    messageT: 0,
+    altarCooldown: 0,
+    transitionToken: 0,
+    roundTransition: false,
+    roundEnemyIds: [],
+    altarQueued: false,
+    className: null,
+    classCore: 0,
+    grapple: null,
+    ghost: { active: false, anchorX: 0, anchorY: 0, hits: 0, cooldown: 0 },
   };
-
+  let arena = { x: 0, y: 0, w: 0, h: 0 };
   function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
-  }
-  function rnd(a, b) {
-    return a + Math.random() * (b - a);
   }
   function dist(a, b) {
     return Math.hypot(a.x - b.x, a.y - b.y);
   }
-  function ang(a, b) {
+  function rnd(a, b) {
+    return a + Math.random() * (b - a);
+  }
+  function angleTo(a, b) {
     return Math.atan2(b.y - a.y, b.x - a.x);
   }
-  function pick(arr) {
-    return arr[Math.floor(Math.random() * arr.length)];
+  function circleHit(a, b) {
+    return dist(a, b) < a.r + b.r;
   }
-  function css(id) {
-    return document.getElementById(id);
-  }
-  function announce(s, t = 1.8) {
-    state.message = s;
-    state.messageT = t;
-  }
-  function resized() {
+  function resize() {
     const r = wrap.getBoundingClientRect();
-    W = Math.max(360, r.width);
-    H = Math.max(360, r.height);
     dpr = Math.min(2, devicePixelRatio || 1);
+    W = Math.max(320, r.width);
+    H = Math.max(320, r.height);
     canvas.width = W * dpr;
     canvas.height = H * dpr;
     canvas.style.width = W + "px";
     canvas.style.height = H + "px";
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const m = Math.min(42, Math.max(18, W * 0.025));
+    arena = { x: m, y: 18, w: W - m * 2, h: H - 36 };
+    if (!state.player.x) resetPlayer();
+    updateDOM();
   }
-  window.addEventListener("resize", resized);
-  resized();
-
-  function arenaRect() {
-    return { l: 28, t: 86, r: W - 28, b: H - 28 };
+  window.addEventListener("resize", resize);
+  function altarPos(i) {
+    return {
+      x: arena.x + arena.w * (i ? 0.82 : 0.18),
+      y: arena.y + arena.h * 0.52,
+    };
+  }
+  function updateDOM() {
+    playerDom.style.left = state.player.x + "px";
+    playerDom.style.top = state.player.y + "px";
+    playerDom.style.display = state.mode === "start" ? "none" : "block";
+    playerDom.style.transform = `translate(-50%,-50%) scale(${(state.player.jump > 0 ? 1.18 : 1) * shrinkFactor()})`;
+    document.querySelector(".player-direction").style.transform =
+      `rotate(${state.player.angle}rad)`;
+    for (let i = 0; i < 2; i++)
+      placeAltar(
+        altarDoms[i],
+        ...Object.values(altarPos(i)),
+        state.altarOptions[i],
+      );
+  }
+  function placeAltar(el, x, y, type) {
+    el.style.left = x + "px";
+    el.style.top = y + "px";
+    el.style.display = state.mode === "altar" && type ? "block" : "none";
+    const c = type ? enemyDefs[type].color : "#9b7cff";
+    el.querySelector(".altar-pedestal").style.borderColor = c;
+    el.querySelector(".altar-glow").style.background = c + "22";
+    el.querySelector(".altar-name").textContent = type
+      ? enemyDefs[type].name
+      : "VOID ALTAR";
+    el.querySelector(".altar-name").style.color = c;
+    el.querySelector(".altar-desc").textContent = type
+      ? enemyDefs[type].desc
+      : "Awaiting enemy";
   }
   function resetPlayer() {
-    const a = arenaRect();
-    state.player.x = (a.l + a.r) / 2;
-    state.player.y = (a.t + a.b) / 2;
-    state.player.r = 14;
-    state.player.angle = 0;
-    state.player.jump = 0;
-    state.player.jumpMax = 0.8;
-    state.player.inv = 0;
-    state.player.cool = 0;
+    state.player = {
+      x: W / 2,
+      y: H / 2,
+      r: 14,
+      angle: 0,
+      jump: 0,
+      jumpMax:
+        0.8 + state.upgrades.jump * 0.3 + state.upgrades.phasejump * 0.25,
+      cooldown: 0,
+      alive: true,
+      invincible: 3,
+      dashTime: 0,
+      dashCooldown: 0,
+      dashV: 0,
+      dashAngle: 0,
+    };
+    updateDOM();
+  }
+  function chooseTwoRandomEnemies() {
+    const basic = [
+      "shooter",
+      "shotgun",
+      "beam",
+      "shock",
+      "sword",
+      "dasher",
+      "burst",
+      "hunter",
+      "mine",
+      "orbiter",
+    ];
+    const pool = state.level >= 11 ? Object.keys(enemyDefs) : basic;
+    const t = [...pool].sort(() => Math.random() - 0.5);
+    state.altarOptions = [t[0], t[1]];
+  }
+  function classDefs() {
+    return {
+      ninja: {
+        name: "NINJA",
+        tag: "SHURIKEN",
+        desc: "The standard class. Aim and fire your shuriken normally.",
+        icon: "NIN",
+      },
+      dasher: {
+        name: "DASHER",
+        tag: "E — DASH",
+        desc: "No weapon. Press E to dash forward and kill enemies by colliding with them. While dashing, Hunters are destroyed instead of killing you.",
+        icon: "DSH",
+      },
+      grappler: {
+        name: "GRAPPLER",
+        tag: "HOOK",
+        desc: "Your shuriken is replaced by a grappling hook. Shoot the exact point you are aiming at and pull yourself all the way there. Grappling enemies kills them.",
+        icon: "GRP",
+      },
+      ghost: {
+        name: "GHOST",
+        tag: "E — GHOST",
+        desc: "Press E to enter ghost form. You become able to survive one extra hit but move slower. Press E again to return to your activation spot. 10 second cooldown.",
+        icon: "GST",
+      },
+    };
+  }
+  function showClassChoice() {
+    state.mode = "class";
+    classChoices.innerHTML = "";
+    for (const [k, cdef] of Object.entries(classDefs())) {
+      const c = document.createElement("div");
+      c.className = "choice";
+      c.innerHTML = `<div class="tag">${cdef.tag}</div><div class="name">${cdef.name}</div><div class="desc">${cdef.desc}</div>`;
+      c.onclick = () => chooseClass(k);
+      classChoices.appendChild(c);
+    }
+    classScreen.classList.remove("hidden");
+    altarScreen.style.display = "none";
+    upgradeScreen.classList.add("hidden");
+    updateDOM();
+  }
+  function chooseClass(k) {
+    state.className = k;
+    state.classCore = state.upgrades.classcore || 0;
+    state.ghost = {
+      active: false,
+      anchorX: 0,
+      anchorY: 0,
+      hits: 0,
+      cooldown: 0,
+    };
+    state.grapple = null;
+    classScreen.classList.add("hidden");
+    showAltar();
+  }
+  function showAltar() {
+    state.mode = "altar";
+    state.altarCooldown = 0;
+    chooseTwoRandomEnemies();
+    altarTitle.textContent = "CHOOSE AN ALTAR";
+    altarHint.textContent =
+      "Two random enemies have appeared. Aim at one of the physical altars and shoot it to choose that enemy.";
+    enemyChoices.innerHTML = "";
+    const info = document.createElement("div");
+    info.className = "choice";
+    info.style.gridColumn = "1/-1";
+    info.innerHTML = `<div class="tag">PHYSICAL ALTARS ONLY</div><div class="name">SHOOT ONE ALTAR TO CONTINUE</div><div class="desc">There is no enemy selection menu. Each altar already contains a randomly chosen enemy.</div>`;
+    enemyChoices.appendChild(info);
+    altarScreen.style.display = "flex";
+    upgradeScreen.classList.add("hidden");
+    gameOverScreen.classList.add("hidden");
+    updateDOM();
+  }
+  function resetEnemyForRound(e) {
+    e.alive = true;
+    e.attack = attackDelay(2);
+    e.shotAngle = rnd(-Math.PI, Math.PI);
+    e.angle = rnd(-Math.PI, Math.PI);
+    e.phase = e.type === "beam" ? "cool" : e.type === "shock" ? "idle" : "idle";
+    e.phaseTimer =
+      e.type === "beam"
+        ? attackDelay(10)
+        : e.type === "shock"
+          ? attackDelay(5)
+          : 0;
+    e.beamProgress = 0;
+    e.targetX = e.x;
+    e.targetY = e.y;
+    e.jumpScale = 1;
+    e.swordAngle = rnd(-Math.PI, Math.PI);
+    e.swordTimer = 0;
+    e.swordDelay = attackDelay(6);
+    e.teleport = 5;
+    e.strikeTimer = 0;
+    e.swordX = e.x;
+    e.swordY = e.y;
+    e.swordActive = false;
+    e.wave = 0;
+    e.dashTimer = attackDelay(5);
+    e.dashPhase = "idle";
+    e.dashX = e.x;
+    e.dashY = e.y;
+    e.dashAngle = 0;
+    e.mineTimer = attackDelay(4);
+    e.mines = [];
+    e.orbitTimer = attackDelay(4);
+    e.history = [];
+    e.historyTimer = 0;
+    e.mirrorTimer = attackDelay(2.5);
+    e.timeHistory = [];
+    e.timeTimer = 0;
+    e.voidTimer = attackDelay(4);
+    e.voidPhase = "mark";
+    e.voidMarks = [];
+    e.teleportTimer = attackDelay(3);
+    e.splitterTimer = attackDelay(3);
+    e.predictorTimer = attackDelay(2.5);
+    e.pulseTimer = attackDelay(5);
+    e.pulseRadius = 0;
+    e.mimicTimer = attackDelay(3);
+    e.huntTimer = attackDelay(4);
+    e.huntPhase = "track";
+    e.huntTargetX = e.x;
+    e.huntTargetY = e.y;
+  }
+  function reviveAllEnemies() {
+    for (const e of state.enemies) resetEnemyForRound(e);
+  }
+  function selectAltar(i) {
+    if (state.mode !== "altar" || state.altarCooldown > 0) return;
+    const chosen = state.altarOptions[i];
+    if (!chosen) return;
+
+    state.altarCooldown = 0.3;
+    state.selectedEnemy = chosen;
+    state.altarOptions = [null, null];
+    altarDoms.forEach((el) => (el.style.display = "none"));
+    altarScreen.style.display = "none";
+    closeChoiceOverlay();
+
+    // Every altar choice starts a real combat round. All previously selected
+    // enemies return alive, then the newly selected enemy is added to the stack.
+    reviveAllEnemies();
+    spawnEnemy(chosen);
+    for (let i = 0; i < state.chains.swarm; i++) spawnEnemy(chosen);
+
+    state.roundEnemyIds = state.enemies.filter((e) => e.alive).map((e) => e.id);
+    state.enemyShots = [];
+    state.shots = [];
+    state.echoQueue = [];
+    state.grapple = null;
+    state.bloodrushStacks = 0;
     state.player.alive = true;
-    state.player.dash = 0;
-    state.player.dashCd = 0;
-    state.player.ghost = false;
-    state.player.ghostCd = 0;
-    state.player.vx = 0;
-    state.player.vy = 0;
+    state.player.invincible = 3;
+    state.player.cooldown = 0;
+    state.mode = "play";
+
+    updateHud();
+    updateDOM();
+    showMessage("CHOSEN: " + enemyDefs[chosen].name + "  •  3s INVINCIBILITY");
   }
-  function baseSpeed() {
-    return (
-      235 * (1 + state.upgrades.speed * 0.12) * (state.player.ghost ? 0.62 : 1)
-    );
+
+  function firePlayer() {
+    if (state.mode === "class") return;
+    if (state.mode === "altar") {
+      const p = state.player,
+        a = p.angle;
+      let best = -1,
+        bestScore = 1e9;
+      for (let i = 0; i < 2; i++) {
+        const t = altarPos(i),
+          d = dist(p, t),
+          ta = Math.atan2(t.y - p.y, t.x - p.x),
+          diff = Math.abs(Math.atan2(Math.sin(a - ta), Math.cos(a - ta)));
+        if (diff < 0.24 && d < 900 && d < bestScore) {
+          best = i;
+          bestScore = d;
+        }
+      }
+      if (best >= 0) {
+        const t = altarPos(best);
+        state.shots.push({
+          x: p.x,
+          y: p.y,
+          vx: Math.cos(a) * 600,
+          vy: Math.sin(a) * 600,
+          r: 5,
+          life: 0.25,
+        });
+        selectAltar(best);
+      }
+      return;
+    }
+    if (state.className === "grappler") {
+      if (state.grapple) return;
+      const p = state.player,
+        targetX = mouse.x,
+        targetY = mouse.y,
+        a = Math.atan2(targetY - p.y, targetX - p.x);
+      state.grapple = {
+        x: p.x,
+        y: p.y,
+        vx: Math.cos(a) * (620 + state.classCore * 70),
+        vy: Math.sin(a) * (620 + state.classCore * 70),
+        r: 9,
+        phase: "travel",
+        targetX,
+        targetY,
+      };
+      return;
+    }
+    if (state.className === "dasher") return;
+    if (state.player.cooldown > 0) return;
+    const p = state.player,
+      a = p.angle,
+      speed = 500 + state.upgrades.bullet * 80;
+    const spread = state.upgrades.twin ? 0.09 : 0;
+    const offsets = state.upgrades.triple
+      ? [-0.12, 0, 0.12]
+      : state.upgrades.twin
+        ? [-spread, spread]
+        : [0];
+    for (const off of offsets) {
+      const aa = a + off;
+      const shot = {
+        x: p.x + Math.cos(aa) * 18,
+        y: p.y + Math.sin(aa) * 18,
+        vx: Math.cos(aa) * speed,
+        vy: Math.sin(aa) * speed,
+        r: (5 + state.upgrades.size * 2) * Math.pow(0.9, state.upgrades.shrink),
+        life: 2 + state.upgrades.range * 0.6,
+        pierces: state.upgrades.pierce,
+        bounces: state.upgrades.bounce,
+      };
+      state.shots.push(shot);
+      if (state.upgrades.echo) state.echoQueue.push({ ...shot, delay: 0.32 });
+    }
+    p.cooldown = Math.max(0.35, 2 - state.upgrades.rapid * 0.25);
   }
-  function projectileSpeed() {
-    return 350 * (1 + state.upgrades.bullet * 0.18);
+  // ===== INTEGRATED CHOICE SYSTEM =====
+  // Chains and upgrades are part of the normal round progression. They do not
+  // depend on the old HTML upgrade panel, so they cannot be hidden by its CSS.
+  function closeChoiceOverlay() {
+    const old = document.getElementById("voidboundChoiceOverlay");
+    if (old) old.remove();
   }
-  function attackFactor(e) {
-    let f = 1;
-    if (state.chains.frenzy) f *= Math.pow(0.75, state.chains.frenzy);
-    if (state.upgrades.time) f *= Math.pow(1.08, state.upgrades.time);
-    if (state.chains.relentless) f *= Math.pow(1.05, state.chains.relentless);
-    return f;
+
+  function openChoiceOverlay(kind, keys, defs) {
+    closeChoiceOverlay();
+    state.mode = kind;
+
+    const overlay = document.createElement("div");
+    overlay.id = "voidboundChoiceOverlay";
+    Object.assign(overlay.style, {
+      position: "fixed",
+      inset: "0",
+      zIndex: "2147483647",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "24px",
+      boxSizing: "border-box",
+      background: "rgba(3,0,10,.94)",
+      color: "#fff",
+      fontFamily: "inherit",
+      pointerEvents: "auto",
+    });
+
+    const panel = document.createElement("div");
+    Object.assign(panel.style, {
+      width: "min(980px, 94vw)",
+      maxHeight: "90vh",
+      overflow: "auto",
+      padding: "28px",
+      boxSizing: "border-box",
+      borderRadius: "24px",
+      background: "linear-gradient(145deg,#19052d,#08000f)",
+      border: kind === "chain" ? "2px solid #ff35d0" : "2px solid #9b5cff",
+      boxShadow: kind === "chain" ? "0 0 60px #ff35d055" : "0 0 60px #9b5cff55",
+      textAlign: "center",
+    });
+
+    const title = document.createElement("div");
+    title.textContent =
+      kind === "chain" ? "⛓ CHAIN — CHOOSE 1" : "✦ UPGRADE — CHOOSE 1";
+    Object.assign(title.style, {
+      fontSize: "clamp(26px,4vw,42px)",
+      fontWeight: "900",
+      letterSpacing: "2px",
+      marginBottom: "8px",
+      color: kind === "chain" ? "#ff4bd8" : "#c77dff",
+      textShadow: kind === "chain" ? "0 0 22px #ff35d0" : "0 0 22px #9b5cff",
+    });
+    panel.appendChild(title);
+
+    const subtitle = document.createElement("div");
+    subtitle.textContent =
+      kind === "chain"
+        ? "A chain permanently makes the run harder."
+        : "Choose one upgrade. The new upgrade pool is active now.";
+    Object.assign(subtitle.style, {
+      opacity: ".8",
+      fontSize: "15px",
+      marginBottom: "22px",
+    });
+    panel.appendChild(subtitle);
+
+    const cards = document.createElement("div");
+    Object.assign(cards.style, {
+      display: "grid",
+      gridTemplateColumns: "repeat(3,minmax(0,1fr))",
+      gap: "16px",
+    });
+
+    for (const key of keys) {
+      const def = defs[key];
+      if (!def) continue;
+      const card = document.createElement("button");
+      card.type = "button";
+      card.innerHTML = `<div style="font-size:12px;opacity:.7;letter-spacing:2px;margin-bottom:10px">${def.icon || "VOID"}</div><div style="font-size:21px;font-weight:900;margin-bottom:10px">${def.name}</div><div style="font-size:14px;line-height:1.45;opacity:.86">${def.desc}</div>`;
+      Object.assign(card.style, {
+        minHeight: "190px",
+        padding: "20px",
+        borderRadius: "18px",
+        cursor: "pointer",
+        color: "#fff",
+        background: "linear-gradient(145deg,#160b25,#0c0614)",
+        border: "1px solid #713b91",
+        fontFamily: "inherit",
+        textAlign: "center",
+        transition:
+          "transform .12s ease,border-color .12s ease,box-shadow .12s ease",
+      });
+      card.addEventListener("mouseenter", () => {
+        card.style.transform = "translateY(-5px)";
+        card.style.borderColor = kind === "chain" ? "#ff4bd8" : "#b477ff";
+        card.style.boxShadow =
+          kind === "chain" ? "0 0 24px #ff35d044" : "0 0 24px #9b5cff44";
+      });
+      card.addEventListener("mouseleave", () => {
+        card.style.transform = "";
+        card.style.borderColor = "#713b91";
+        card.style.boxShadow = "none";
+      });
+      card.addEventListener("click", () => {
+        if (kind === "chain") chooseChain(key);
+        else chooseUpgrade(key);
+      });
+      cards.appendChild(card);
+    }
+
+    panel.appendChild(cards);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    altarScreen.style.display = "none";
+    classScreen.classList.add("hidden");
+    upgradeScreen.classList.add("hidden");
+    gameOverScreen.classList.add("hidden");
+    updateDOM();
   }
-  function randomDelay() {
-    if (state.chains.relentless) return rnd(-0.35, 0.35);
-    return rnd(-2, 2);
+
+  function showUpgrades() {
+    // One of the ten new upgrades is guaranteed to appear every upgrade event.
+    const newUpgradeKeys = [
+      "triple",
+      "bounce",
+      "voidburst",
+      "orbit",
+      "echo",
+      "time",
+      "phasejump",
+      "voidtrail",
+      "magnet",
+      "shrink",
+    ].filter((k) => upgradeDefs[k]);
+
+    const guaranteed =
+      newUpgradeKeys[Math.floor(Math.random() * newUpgradeKeys.length)];
+    const pool = Object.keys(upgradeDefs).filter((k) => k !== guaranteed);
+    pool.sort(() => Math.random() - 0.5);
+    const choices = [guaranteed, ...pool].slice(0, 3);
+    openChoiceOverlay("upgrade", choices, upgradeDefs);
   }
-  function nextAttack(base) {
-    return Math.max(
-      0.18,
-      base * attackFactor(currentEnemyForTiming()) + randomDelay(),
-    );
+
+  function showChains() {
+    const keys = Object.keys(chainDefs)
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 3);
+    openChoiceOverlay("chain", keys, chainDefs);
   }
-  function currentEnemyForTiming() {
-    return state.enemies.find((e) => e.alive) || { type: "shooter" };
+
+  function chooseChain(k) {
+    if (state.mode !== "chain" || !chainDefs[k]) return;
+    state.chains[k] = (state.chains[k] || 0) + 1;
+    state.pendingChain = false;
+    closeChoiceOverlay();
+    showMessage("CHAIN: " + chainDefs[k].name);
+    if (state.pendingUpgrade) showUpgrades();
+    else showAltar();
+  }
+
+  function chooseUpgrade(k) {
+    if (state.mode !== "upgrade" || !upgradeDefs[k]) return;
+    state.upgrades[k] = (state.upgrades[k] || 0) + 1;
+    if (k === "classcore") state.classCore = state.upgrades.classcore;
+    if (k === "weaken") state.weaken = state.selectedEnemy;
+    if (k === "jump" || k === "phasejump") {
+      state.player.jumpMax =
+        0.8 + state.upgrades.jump * 0.3 + state.upgrades.phasejump * 0.25;
+    }
+    state.pendingUpgrade = false;
+    closeChoiceOverlay();
+    showMessage(upgradeDefs[k].name + " ACQUIRED");
+    showAltar();
+  }
+
+  function startGame() {
+    startScreen.classList.add("hidden");
+    state.level = 1;
+    state.round = 1;
+    state.selectedEnemy = null;
+    state.enemies = [];
+    state.nextEnemyId = 1;
+    state.shots = [];
+    state.enemyShots = [];
+    state.upgrades = {
+      classcore: 0,
+      speed: 0,
+      bullet: 0,
+      jump: 0,
+      size: 0,
+      rapid: 0,
+      twin: 0,
+      pierce: 0,
+      homing: 0,
+      range: 0,
+      triple: 0,
+      bounce: 0,
+      voidburst: 0,
+      orbit: 0,
+      echo: 0,
+      time: 0,
+      phasejump: 0,
+      voidtrail: 0,
+      magnet: 0,
+      shrink: 0,
+    };
+    state.weaken = null;
+    state.chains = {
+      frenzy: 0,
+      overclock: 0,
+      bulletstorm: 0,
+      swarm: 0,
+      closecall: 0,
+      heavy: 0,
+      fragile: 0,
+      relentless: 0,
+      bloodrush: 0,
+      blackhole: 0,
+    };
+    state.bloodrushStacks = 0;
+    state.echoQueue = [];
+    state.orbitBlades = [];
+    state.voidTrail = [];
+    state.pendingChain = false;
+    state.pendingUpgrade = false;
+    state.roundTransition = false;
+    state.transitionToken++;
+    closeChoiceOverlay();
+    state.className = null;
+    state.classCore = 0;
+    state.grapple = null;
+    state.ghost = {
+      active: false,
+      anchorX: 0,
+      anchorY: 0,
+      hits: 0,
+      cooldown: 0,
+    };
+    resetPlayer();
+    showClassChoice();
+  }
+  document.getElementById("startBtn").onclick = startGame;
+  document.getElementById("restartBtn").onclick = () => location.reload();
+  function startLevel() {
+    state.mode = "play";
+    resetPlayer();
+    if (state.selectedEnemy) {
+      reviveAllEnemies();
+      const before = new Set(state.enemies.map((e) => e.id));
+      addEnemiesForLevel();
+      state.roundEnemyIds = state.enemies.map((e) => e.id);
+    }
+    updateHud();
+    updateDOM();
+  }
+  function addEnemiesForLevel() {
+    const stack = 1 + Math.floor((state.level - 1) / 3);
+    for (let i = 0; i < stack; i++) spawnEnemy(state.selectedEnemy);
   }
   function spawnEnemy(type) {
-    const a = arenaRect();
-    let x = rnd(a.l + 55, a.r - 55),
-      y = rnd(a.t + 55, a.b - 55);
-    for (let i = 0; i < 20; i++) {
-      if (Math.hypot(x - state.player.x, y - state.player.y) > 170) break;
-      x = rnd(a.l + 55, a.r - 55);
-      y = rnd(a.t + 55, a.b - 55);
+    const pad = 90;
+    let x, y;
+    do {
+      x = rnd(arena.x + pad, arena.x + arena.w - pad);
+      y = rnd(arena.y + pad, arena.y + arena.h - pad);
+    } while (
+      Math.hypot(x - state.player.x, y - state.player.y) <
+      Math.max(70, 180 - state.chains.closecall * 45)
+    );
+    if (type === "repeater") {
+      const backAngle = state.player.angle + Math.PI;
+      x = clamp(
+        state.player.x + Math.cos(backAngle) * 120,
+        arena.x + pad,
+        arena.x + arena.w - pad,
+      );
+      y = clamp(
+        state.player.y + Math.sin(backAngle) * 120,
+        arena.y + pad,
+        arena.y + arena.h - pad,
+      );
     }
-    const d = ENEMIES[type];
-    const e = {
-      id: state.nextId++,
+    state.enemies.push({
+      id: state.nextEnemyId++,
+      alive: true,
       type,
       x,
       y,
       r: 18,
-      alive: true,
-      angle: rnd(0, TAU),
-      timer: rnd(0.4, 1.8),
-      phase: "idle",
-      phaseT: 0,
+      angle: rnd(-Math.PI, Math.PI),
+      attack: attackDelay(2),
+      shotAngle: rnd(-Math.PI, Math.PI),
+      phase: type === "beam" ? "cool" : type === "shock" ? "idle" : "idle",
+      phaseTimer:
+        type === "beam"
+          ? attackDelay(10)
+          : type === "shock"
+            ? attackDelay(5)
+            : 0,
+      beamProgress: 0,
       targetX: x,
       targetY: y,
-      seed: rnd(0, 100),
-      path: [],
-      pathIndex: 0,
-      teleportT: 5,
-      swordAngle: rnd(0, TAU),
-      swordT: 0,
-      beamAngle: 0,
-      beamState: "cool",
-      beamT: rnd(1, 3),
-      shotAngle: rnd(0, TAU),
-      weakened: false,
-    };
-    if (state.upgrades.weaken && Math.random() < 0.28) e.weakened = true;
-    state.enemies.push(e);
-    return e;
-  }
-  function reviveStack() {
-    for (const e of state.enemies) e.alive = true;
-  }
-  function chooseTwoEnemies() {
-    const pool = state.level > 10 ? [...Object.keys(ENEMIES)] : BASIC;
-    let a = pick(pool),
-      b = pick(pool);
-    while (b === a) b = pick(pool);
-    return [a, b];
-  }
-
-  // ---------- UI owned entirely by this rebuild ----------
-  let ui = null;
-  function makeUI() {
-    if (ui) return;
-    ui = document.createElement("div");
-    ui.id = "voidboundRebuildUI";
-    Object.assign(ui.style, {
-      position: "fixed",
-      inset: "0",
-      zIndex: "999999",
-      pointerEvents: "none",
-      fontFamily: "Arial,system-ui,sans-serif",
-      color: "#fff",
+      jumpScale: 1,
+      swordAngle: rnd(-Math.PI, Math.PI),
+      swordTimer: 0,
+      swordDelay: attackDelay(6),
+      teleport: 5,
+      strikeTimer: 0,
+      swordX: x,
+      swordY: y,
+      swordActive: false,
+      wave: 0,
+      dashTimer: attackDelay(5),
+      dashPhase: "idle",
+      dashX: x,
+      dashY: y,
+      dashAngle: 0,
+      mineTimer: attackDelay(4),
+      mines: [],
+      orbitTimer: attackDelay(4),
+      history: [],
+      historyTimer: 0,
+      mirrorTimer: attackDelay(2.5),
+      timeHistory: [],
+      timeTimer: 0,
+      voidTimer: attackDelay(4),
+      voidPhase: "mark",
+      voidMarks: [],
+      teleportTimer: attackDelay(3),
+      splitterTimer: attackDelay(3),
+      predictorTimer: attackDelay(2.5),
+      pulseTimer: attackDelay(5),
+      pulseRadius: 0,
+      mimicTimer: attackDelay(3),
+      huntTimer: attackDelay(4),
+      huntPhase: "track",
+      huntTargetX: x,
+      huntTargetY: y,
     });
-    document.body.appendChild(ui);
-    const style = document.createElement("style");
-    style.textContent = `#vbBox{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(4,0,12,.94);pointer-events:auto}#vbPanel{width:min(1000px,94vw);max-height:90vh;overflow:auto;padding:28px;border:2px solid #ff35d0;border-radius:24px;background:linear-gradient(145deg,#1a052b,#07000d);box-shadow:0 0 70px #ff35d044;text-align:center}#vbPanel h1{margin:0 0 8px;font-size:clamp(28px,5vw,48px);letter-spacing:2px;color:#ff4bd8;text-shadow:0 0 20px #ff35d0}#vbPanel p{opacity:.8}#vbCards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:22px}.vbCard{min-height:185px;padding:20px;border:1px solid #6d3a8d;border-radius:18px;background:#10081a;color:white;cursor:pointer;font:inherit;transition:.12s}.vbCard:hover{transform:translateY(-6px);border-color:#ff4bd8;box-shadow:0 0 25px #ff35d044}.vbName{font-size:21px;font-weight:900;margin:9px 0}.vbIcon{font-size:12px;opacity:.65;letter-spacing:2px}.vbDesc{font-size:14px;line-height:1.45;opacity:.85}.vbHud{position:absolute;left:20px;top:14px;font-weight:800;letter-spacing:1px;text-shadow:0 0 10px #ff35d0}.vbMsg{position:absolute;left:50%;top:78px;transform:translateX(-50%);font-weight:900;color:#ff8be8;text-shadow:0 0 15px #ff35d0;white-space:nowrap}.vbTip{position:absolute;right:18px;top:14px;text-align:right;font-size:12px;opacity:.7}.vbClass{position:absolute;left:20px;bottom:12px;font-size:12px;opacity:.7}`;
-    document.head.appendChild(style);
   }
-  function clearUI() {
-    makeUI();
-    ui.innerHTML = "";
+  function attackDelay(base) {
+    const mult =
+      1 -
+      Math.min(
+        0.55,
+        state.chains.overclock * 0.18 + state.chains.relentless * 0.1,
+      );
+    return Math.max(0.2, base * mult + rnd(-2, 2));
   }
-  function card(def, key, kind) {
-    const b = document.createElement("button");
-    b.className = "vbCard";
-    b.type = "button";
-    b.innerHTML = `<div class="vbIcon">${def.icon || "VOID"}</div><div class="vbName">${def.name}</div><div class="vbDesc">${def.desc}</div>`;
-    b.onclick = () =>
-      kind === "class"
-        ? chooseClass(key)
-        : kind === "enemy"
-          ? chooseEnemy(key)
-          : kind === "chain"
-            ? chooseChain(key)
-            : chooseUpgrade(key);
-    return b;
+  function enemySpeed(e) {
+    const b =
+      {
+        shooter: 70,
+        shotgun: 62,
+        beam: 58,
+        shock: 45,
+        sword: 65,
+        dasher: 80,
+        burst: 48,
+        hunter: 42,
+        mine: 52,
+        orbiter: 52,
+        repeater: 74,
+        mirror: 60,
+        timekeeper: 55,
+        voidcaster: 48,
+        teleporter: 58,
+        splitter: 44,
+        predictor: 52,
+        pulsar: 42,
+        mimic: 62,
+        voidhunter: 50,
+      }[e.type] || 60;
+    let speed = state.weaken === e.type ? b * 0.62 : b;
+    speed *= 1 + state.chains.frenzy * 0.15;
+    speed *= 1 + state.bloodrushStacks * state.chains.bloodrush * 0.1;
+    return speed;
   }
-  function overlay(title, subtitle, choices, defs, kind, color = "#ff35d0") {
-    clearUI();
-    const box = document.createElement("div");
-    box.id = "vbBox";
-    const p = document.createElement("div");
-    p.id = "vbPanel";
-    p.style.borderColor = color;
-    p.innerHTML = `<div style="font-size:12px;letter-spacing:3px;opacity:.65">VOIDBOUND</div><h1 style="color:${color}">${title}</h1><p>${subtitle}</p>`;
-    const cards = document.createElement("div");
-    cards.id = "vbCards";
-    choices.forEach((k) => cards.appendChild(card(defs[k], k, kind)));
-    p.appendChild(cards);
-    box.appendChild(p);
-    ui.appendChild(box);
+  function tryJump() {
+    if (state.player.jump <= 0)
+      state.player.jump =
+        state.player.jumpMax * Math.max(0.35, 1 - state.chains.fragile * 0.2);
   }
-  function hud() {
-    if (state.mode !== "play" && state.mode !== "between") return;
-    clearUI();
-    const h = document.createElement("div");
-    h.className = "vbHud";
-    h.innerHTML = `VOIDBOUND &nbsp; | &nbsp; LEVEL ${state.level} &nbsp; | &nbsp; ROUND ${state.round} &nbsp; | &nbsp; ENEMIES ${state.enemies.filter((e) => e.alive).length}<br><span style="font-size:11px;opacity:.65">CHAINS ${Object.values(state.chains).reduce((a, b) => a + b, 0)} • UPGRADES ${Object.values(state.upgrades).reduce((a, b) => a + b, 0)}</span>`;
-    ui.appendChild(h);
-    const t = document.createElement("div");
-    t.className = "vbTip";
-    t.innerHTML =
-      "WASD / ARROWS MOVE<br>MOUSE AIM • CLICK FIRE<br>SPACE JUMP • E CLASS";
-    ui.appendChild(t);
-    const c = document.createElement("div");
-    c.className = "vbClass";
-    c.textContent = "CLASS: " + (CLASSES[state.className]?.name || "—");
-    ui.appendChild(c);
-    if (state.messageT > 0) {
-      const m = document.createElement("div");
-      m.className = "vbMsg";
-      m.textContent = state.message;
-      ui.appendChild(m);
-    }
-  }
-
-  function startScreen() {
-    state.mode = "start";
-    overlay(
-      "VOIDBOUND",
-      "Choose your class once. Then survive an ever-growing enemy stack.",
-      Object.keys(CLASSES),
-      CLASSES,
-      "class",
-      "#ff35d0",
-    );
-  }
-  function chooseClass(k) {
-    state.className = k;
-    state.classCore = 0;
-    state.mode = "altar";
-    announce("CLASS: " + CLASSES[k].name);
-    showAltars();
-  }
-  function showAltars() {
-    state.altarOptions = chooseTwoEnemies();
-    state.mode = "altar";
-    clearUI();
-    const box = document.createElement("div");
-    box.id = "vbBox";
-    const p = document.createElement("div");
-    p.id = "vbPanel";
-    p.innerHTML =
-      '<div style="font-size:12px;letter-spacing:3px;opacity:.65">ALTAR CHOICE</div><h1>CHOOSE YOUR ENEMY</h1><p>Two physical altars. Shoot one altar to select it. The chosen enemy is added to your existing stack.</p><div id="vbCards"></div><p style="font-size:12px;opacity:.6">The cards are also clickable as a fallback, but the arena altars are the real choice.</p>';
-    const cards = p.querySelector("#vbCards");
-    state.altarOptions.forEach((k) =>
-      cards.appendChild(
-        card(
-          { name: ENEMIES[k].name, desc: ENEMIES[k].desc, icon: "ALTAR" },
-          k,
-          "enemy",
-        ),
-      ),
-    );
-    box.appendChild(p);
-    ui.appendChild(box);
-  }
-  function chooseEnemy(k) {
-    if (state.mode !== "altar") return;
-    const idx = state.altarOptions.indexOf(k);
-    if (idx < 0) return;
-    state.altarOptions = [];
-    clearUI();
-    startRound(k);
-  }
-  function showChains() {
-    const ks = Object.keys(CHAINS)
-      .sort(() => Math.random() - 0.5)
-      .slice(0, 3);
-    overlay(
-      "⛓ CHAIN — CHOOSE 1",
-      "Every third completed round. Chains are permanent and make survival harder.",
-      ks,
-      CHAINS,
-      "chain",
-      "#ff35d0",
-    );
-    state.mode = "chain";
-  }
-  function showUpgrades() {
-    const guaranteed = pick(NEW_UPGRADES.filter((k) => UPGRADES[k]));
-    const rest = Object.keys(UPGRADES)
-      .filter((k) => k !== guaranteed)
-      .sort(() => Math.random() - 0.5);
-    overlay(
-      "✦ UPGRADE — CHOOSE 1",
-      "Every fifth completed round. One of the 10 new upgrades is guaranteed to appear.",
-      [guaranteed, ...rest].slice(0, 3),
-      UPGRADES,
-      "upgrade",
-      "#a66cff",
-    );
-    state.mode = "upgrade";
-  }
-  function chooseChain(k) {
-    if (state.mode !== "chain") return;
-    state.chains[k]++;
-    state.pendingChain = false;
-    announce("CHAIN ACQUIRED: " + CHAINS[k].name);
-    if (state.pendingUpgrade) showUpgrades();
-    else showAltars();
-  }
-  function chooseUpgrade(k) {
-    if (state.mode !== "upgrade") return;
-    state.upgrades[k]++;
-    state.pendingUpgrade = false;
-    announce("UPGRADE: " + UPGRADES[k].name);
-    if (k === "weaken") {
-      const live = state.enemies.filter((e) => e.alive);
-      if (live.length) pick(live).weakened = true;
-    }
-    if (state.pendingChain) showChains();
-    else showAltars();
-  }
-
-  function startRound(chosen) {
-    state.mode = "play";
-    state.roundTransition = false;
-    state.player.alive = true;
-    state.player.inv = 3;
-    state.shots = [];
-    state.enemyShots = [];
-    state.mines = [];
-    state.effects = [];
-    state.history = [];
-    resetPlayer();
-    state.player.inv = 3;
-    reviveStack();
-    spawnEnemy(chosen);
-    if (state.chains.swarm) {
-      for (let i = 0; i < state.chains.swarm; i++) spawnEnemy(chosen);
-    }
-    state.enemies.forEach((e) => {
-      if (e.alive) e.timer = rnd(0.2, 1.4);
+  function enemyBullet(x, y, a, speed = 210) {
+    const finalSpeed = speed * (1 + state.chains.bulletstorm * 0.22);
+    state.enemyShots.push({
+      x: x + Math.cos(a) * 22,
+      y: y + Math.sin(a) * 22,
+      vx: Math.cos(a) * finalSpeed,
+      vy: Math.sin(a) * finalSpeed,
+      r: 7 * (1 + state.chains.bulletstorm * 0.04),
+      life: 8 * (1 + state.chains.blackhole * 0.25),
     });
-    announce("ROUND " + state.round + " • 3 SECONDS INVINCIBLE");
-    hud();
   }
-  function completeRound() {
-    if (state.mode !== "play" || state.transition) return;
-    state.transition = true;
-    state.mode = "between";
-    state.pendingChain = state.round % 3 === 0;
-    state.pendingUpgrade = state.round % 5 === 0;
-    state.round++;
-    state.level = state.round;
-    state.shots = [];
-    state.enemyShots = [];
-    state.effects = [];
-    announce("ROUND CLEARED");
-    setTimeout(() => {
-      state.transition = false;
-      if (state.pendingChain) showChains();
-      else if (state.pendingUpgrade) showUpgrades();
-      else showAltars();
-    }, 450);
+  function startDash() {
+    if (state.player.cooldown > 0 || (state.player.jump > 0 && false)) return;
+    state.player.dashTime = 0.28;
+    state.player.dashCooldown = 1.0;
+    state.player.dashV = 650 + state.classCore * 100;
+    state.player.dashX = state.player.x;
+    state.player.dashY = state.player.y;
+    state.player.dashAngle = state.player.angle;
+    state.player.cooldown = state.player.dashCooldown;
   }
-
-  // ---------- combat ----------
-  function firePlayer() {
-    if (
-      state.mode !== "play" ||
-      !state.player.alive ||
-      state.player.inv > 0 ||
-      state.player.cool > 0
-    )
-      return;
-    const p = state.player;
-    if (state.className === "dasher") return;
-    if (state.className === "grappler") {
-      state.grapple = { x: mouse.x, y: mouse.y };
-      return;
+  function toggleGhost() {
+    const g = state.ghost;
+    if (!g) return;
+    if (g.active) {
+      g.active = false;
+      state.player.x = g.anchorX;
+      state.player.y = g.anchorY;
+      g.cooldown = 10 - Math.min(5, state.classCore);
+      g.hits = 0;
+    } else if (g.cooldown <= 0) {
+      g.active = true;
+      g.anchorX = state.player.x;
+      g.anchorY = state.player.y;
+      g.hits = 1;
     }
-    const speed = projectileSpeed();
-    let offs = [0];
-    if (state.upgrades.triple) offs = [-0.12, 0, 0.12];
-    else if (state.upgrades.twin) offs = [-0.08, 0.08];
-    for (const o of offs) {
-      const a = p.angle + o;
-      state.shots.push({
-        x: p.x + Math.cos(a) * 20,
-        y: p.y + Math.sin(a) * 20,
-        vx: Math.cos(a) * speed,
-        vy: Math.sin(a) * speed,
-        r: (5 + state.upgrades.size * 2) * Math.pow(0.9, state.upgrades.shrink),
-        life: 2 + state.upgrades.range * 0.6,
-        pierce: state.upgrades.pierce,
-        bounce: state.upgrades.bounce,
-        homing: state.upgrades.homing + state.upgrades.magnet * 2,
-      });
-      if (state.upgrades.echo)
-        state.shots.push({
-          x: p.x + Math.cos(a) * 20,
-          y: p.y + Math.sin(a) * 20,
-          vx: Math.cos(a) * speed,
-          vy: Math.sin(a) * speed,
-          r: 3,
-          life: 1.3,
-          delay: 0.25,
-        });
-    }
-    p.cool = Math.max(0.3, 2 - state.upgrades.rapid * 0.25);
   }
-  function hurt(reason) {
-    if (state.player.inv > 0 || state.player.jump > 0 || state.player.ghost)
-      return;
-    if (!state.player.alive) return;
-    state.player.alive = false;
-    state.deathReason = reason;
-    state.mode = "dead";
-    announce("VOID CLAIMED YOU");
-    deathScreen();
+  function hurtPlayer(source) {
+    const p = state.player,
+      g = state.ghost;
+    if (p.invincible > 0) return false;
+    if (g && g.active && g.hits > 0) {
+      g.hits--;
+      showMessage("GHOST HIT ABSORBED");
+      return false;
+    }
+    die();
+    return true;
   }
   function killEnemy(e) {
     if (!e.alive) return;
     e.alive = false;
-    for (let i = 0; i < 12; i++)
-      state.effects.push({
-        x: e.x,
-        y: e.y,
-        vx: rnd(-80, 80),
-        vy: rnd(-80, 80),
-        life: 0.5,
-        r: 2,
-      });
-    if (state.upgrades.voidburst)
-      for (let i = 0; i < 8; i++) {
-        const a = (i * TAU) / 8;
-        state.enemyShots.push({
+    state.bloodrushStacks++;
+    if (state.upgrades.voidburst) {
+      for (let k = 0; k < 4; k++) {
+        const a = (k * TAU) / 4;
+        state.shots.push({
           x: e.x,
           y: e.y,
-          vx: Math.cos(a) * 170,
-          vy: Math.sin(a) * 170,
-          r: 5,
-          life: 1.3,
+          vx: Math.cos(a) * 330,
+          vy: Math.sin(a) * 330,
+          r: 4,
+          life: 0.9,
+          pierces: 0,
+          bounces: 0,
         });
       }
-    if (state.chains.bloodrush) {
-      for (const q of state.enemies)
-        if (q.alive) q.timer = Math.min(q.timer, 0.5);
     }
   }
-  function enemyBullet(x, y, a, s = 150, r = 7, life = 5) {
-    const mult = 1 + state.chains.overclock * 0.25;
-    state.enemyShots.push({
-      x,
-      y,
-      vx: Math.cos(a) * s * mult,
-      vy: Math.sin(a) * s * mult,
-      r: r * (state.chains.heavy ? 1.25 : 1),
-      life,
-    });
+  function shrinkFactor() {
+    return Math.pow(0.9, state.upgrades.shrink);
   }
-  function aimAt(e) {
-    return Math.atan2(state.player.y - e.y, state.player.x - e.x);
-  }
-  function enemyAttack(e) {
-    const p = state.player,
-      a = aimAt(e);
-    switch (e.type) {
-      case "shooter":
-        enemyBullet(e.x, e.y, a, 145, 7);
-        break;
-      case "shotgun":
-        for (let i = -1; i <= 1; i++)
-          enemyBullet(e.x, e.y, a + i * 0.38, 125, 6);
-        e.angle += Math.PI / 4;
-        break;
-      case "repeater": {
-        const past = state.history[Math.max(0, state.history.length - 35)];
-        if (past) {
-          e.targetX = past.x;
-          e.targetY = past.y;
-        }
-        enemyBullet(
-          e.x,
-          e.y,
-          Math.atan2(e.targetY - e.y, e.targetX - e.x),
-          180,
-          6,
+  function updateExtraUpgrades(dt) {
+    if (state.upgrades.orbit) {
+      const count = Math.min(6, 2 + state.upgrades.orbit * 2);
+      const radius = 42 + state.upgrades.orbit * 7;
+      const speed = 2.4 + state.upgrades.orbit * 0.35;
+      if (state.orbitBlades.length !== count)
+        state.orbitBlades = Array.from(
+          { length: count },
+          (_, i) => (i * TAU) / count,
         );
-        break;
-      }
-      case "splitter":
-        enemyBullet(e.x, e.y, a, 190, 8);
-        break;
-      case "vortex":
-        for (let i = 0; i < state.chains.bulletstorm + 1; i++)
-          enemyBullet(e.x, e.y, a + (i * TAU) / 5, 115, 6);
-        break;
-      case "hunter":
-        e.phase = "lunge";
-        e.phaseT = 0.65;
-        break;
-      case "mine":
-        state.mines.push({
-          x: e.x + rnd(-100, 100),
-          y: e.y + rnd(-100, 100),
-          r: 10,
-          life: 8,
-        });
-        break;
-      case "sniper":
-        e.phase = "warning";
-        e.phaseT = 1.2;
-        e.targetX = p.x;
-        e.targetY = p.y;
-        break;
-      case "mirror":
-        enemyBullet(e.x, e.y, -a, 160, 6);
-        break;
-      case "orbit":
-        for (let i = 0; i < 3; i++)
-          enemyBullet(e.x, e.y, e.angle + (i * TAU) / 3, 135, 6);
-        break;
-      case "gravity":
-        state.effects.push({ kind: "gravity", x: p.x, y: p.y, r: 90, life: 3 });
-        break;
-      case "laser":
-        e.phase = "warning";
-        e.phaseT = 0.8;
-        e.targetX = p.x;
-        e.targetY = p.y;
-        break;
-      case "phantom": {
-        const ox = e.x,
-          oy = e.y;
-        const ar = arenaRect();
-        e.x = rnd(ar.l + 40, ar.r - 40);
-        e.y = rnd(ar.t + 40, ar.b - 40);
-        state.effects.push({ kind: "phantom", x: ox, y: oy, r: 28, life: 1 });
-        break;
-      }
-      case "sword":
-        e.swordAngle = rnd(0, TAU);
-        e.swordT = 1;
-        break;
-    }
-  }
-  function updateEnemy(e, dt) {
-    if (!e.alive) return;
-    const p = state.player;
-    const speed = (e.weakened ? 0.7 : 1) * (1 + state.chains.frenzy * 0.05);
-    e.timer -= dt;
-    if (e.phase === "lunge") {
-      const a = ang(e, p);
-      e.x += Math.cos(a) * 480 * dt;
-      e.y += Math.sin(a) * 480 * dt;
-      e.phaseT -= dt;
-      if (e.phaseT <= 0) e.phase = "idle";
-    }
-    if (e.type === "beam") {
-      e.beamAngle = ang(e, p);
-      if (e.beamState === "cool") {
-        e.beamT -= dt;
-        if (e.beamT <= 0) {
-          e.beamState = "warning";
-          e.beamT = 3;
-        }
-      } else if (e.beamState === "warning") {
-        e.beamT -= dt;
-        if (e.beamT <= 0) {
-          e.beamState = "fire";
-          e.beamT = 3;
-        }
-      } else {
-        e.beamT -= dt;
-        if (e.beamT <= 0) {
-          e.beamState = "cool";
-          e.beamT = 10;
-        }
-      }
-    }
-    if (e.type === "shock") {
-      e.timer -= 0;
-      if (e.phase === "idle" && e.timer <= 0) {
-        e.phase = "jump";
-        e.phaseT = 2;
-        e.targetX = rnd(arenaRect().l + 50, arenaRect().r - 50);
-        e.targetY = rnd(arenaRect().t + 50, arenaRect().b - 50);
-      }
-      if (e.phase === "jump") {
-        e.phaseT -= dt;
-        e.x += ((e.targetX - e.x) * dt) / Math.max(0.01, e.phaseT + dt);
-        e.y += ((e.targetY - e.y) * dt) / Math.max(0.01, e.phaseT + dt);
-        if (e.phaseT <= 0) {
-          e.phase = "wave";
-          e.phaseT = 1.8;
-          e.timer = 5;
-        }
-      } else if (e.phase === "wave") {
-        e.phaseT -= dt;
-        if (e.phaseT <= 0) e.phase = "idle";
-      }
-    }
-    if (e.type === "sword") {
-      e.swordT -= dt;
-      e.teleportT -= dt;
-      if (e.swordT <= 0) e.swordT = 6;
-      if (e.teleportT <= 0) {
-        const ar = arenaRect();
-        e.x = rnd(ar.l + 40, ar.r - 40);
-        e.y = rnd(ar.t + 40, ar.b - 40);
-        e.teleportT = 5;
-      }
-    }
-    if (e.timer <= 0 && e.type !== "beam" && e.type !== "shock") {
-      enemyAttack(e);
-      const base = ENEMIES[e.type].rate || 2;
-      e.timer = Math.max(0.2, base * attackFactor(e) + randomDelay());
-    }
-    if (e.type === "sniper" && e.phase === "warning") {
-      e.phaseT -= dt;
-      if (e.phaseT <= 0) {
-        e.phase = "fire";
-        e.phaseT = 0.18;
-        enemyBullet(
-          e.x,
-          e.y,
-          Math.atan2(e.targetY - e.y, e.targetX - e.x),
-          900,
-          9,
-          0.5,
-        );
-      }
-    }
-    if (e.type === "sniper" && e.phase === "fire") {
-      e.phaseT -= dt;
-      if (e.phaseT <= 0) e.phase = "idle";
-    }
-    if (e.type === "laser" && e.phase === "warning") {
-      e.phaseT -= dt;
-      if (e.phaseT <= 0) {
-        e.phase = "fire";
-        e.phaseT = 0.35;
-        enemyBullet(
-          e.x,
-          e.y,
-          Math.atan2(e.targetY - e.y, e.targetX - e.x),
-          1000,
-          8,
-          0.6,
-        );
-      }
-    }
-    if (e.type === "laser" && e.phase === "fire") {
-      e.phaseT -= dt;
-      if (e.phaseT <= 0) e.phase = "idle";
-    }
-    const ar = arenaRect();
-    e.x = clamp(e.x, ar.l + 20, ar.r - 20);
-    e.y = clamp(e.y, ar.t + 20, ar.b - 20);
-    // direct sword hit: player must move in sword direction during its attack
-    if (e.type === "sword" && e.swordT < 0.2 && e.swordT > 0) {
-      const sx = e.x + Math.cos(e.swordAngle) * 130,
-        sy = e.y + Math.sin(e.swordAngle) * 130;
-      if (Math.hypot(p.x - sx, p.y - sy) < 35) hurt("SWORD MASTER");
-    }
-    if (e.type === "shock" && e.phase === "wave" && p.jump <= 0) {
-      if (Math.abs(Math.hypot(p.x - e.x, p.y - e.y) - e.r) < 70)
-        hurt("SHOCK WAVE");
-    }
-    if (e.type === "beam" && e.beamState === "fire") {
-      const dx = Math.cos(e.beamAngle),
-        dy = Math.sin(e.beamAngle),
-        px = p.x - e.x,
-        py = p.y - e.y;
-      const cross = Math.abs(px * dy - py * dx);
-      const forward = px * dx + py * dy;
-      if (cross < 10 && forward > 0) hurt("BEAM");
-    }
-    if (dist(e, p) < e.r + p.r) hurt(e.type.toUpperCase());
-  }
-  function updatePlayer(dt) {
-    const p = state.player;
-    p.inv = Math.max(0, p.inv - dt);
-    p.cool = Math.max(0, p.cool - dt);
-    p.dashCd = Math.max(0, p.dashCd - dt);
-    p.ghostCd = Math.max(0, p.ghostCd - dt);
-    if (state.className === "ghost" && p.ghost) {
-      if (keys.has("e") && !p._e) {
-        p.ghost = false;
-        p.x = p.anchorX;
-        p.y = p.anchorY;
-      }
-      p._e = keys.has("e");
-    } else p._e = keys.has("e");
-    if (
-      state.className === "ghost" &&
-      !p.ghost &&
-      keys.has("e") &&
-      !p._ePrev &&
-      p.ghostCd <= 0
-    ) {
-      p.ghost = true;
-      p.anchorX = p.x;
-      p.anchorY = p.y;
-      p.ghostCd = 10;
-    }
-    p._ePrev = keys.has("e");
-    if (
-      state.className === "dasher" &&
-      keys.has("e") &&
-      !p._dashPrev &&
-      p.dashCd <= 0
-    ) {
-      p.dash = 0.28;
-      p.dashCd = Math.max(1.5, 2.5 - state.classCore * 0.3);
-    }
-    p._dashPrev = keys.has("e");
-    let dx = 0,
-      dy = 0;
-    if (keys.has("w") || keys.has("arrowup")) dy--;
-    if (keys.has("s") || keys.has("arrowdown")) dy++;
-    if (keys.has("a") || keys.has("arrowleft")) dx--;
-    if (keys.has("d") || keys.has("arrowright")) dx++;
-    const m = Math.hypot(dx, dy) || 1;
-    dx /= m;
-    dy /= m;
-    let sp = baseSpeed();
-    if (p.dash > 0) {
-      sp = 850;
-      p.dash -= dt;
-    }
-    p.vx = dx * sp;
-    p.vy = dy * sp;
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
-    const ar = arenaRect();
-    p.x = clamp(p.x, ar.l + 15, ar.r - 15);
-    p.y = clamp(p.y, ar.t + 15, ar.b - 15);
-    if (keys.has(" ") && !p._jump && p.jump <= 0) {
-      p.jump = Math.min(1.2, p.jumpMax + 0.15 * state.upgrades.phasejump);
-      announce("JUMP");
-    }
-    p._jump = keys.has(" ");
-    if (p.jump > 0) p.jump -= dt;
-    if (state.className === "dasher" && p.dash > 0) {
+      for (let i = 0; i < state.orbitBlades.length; i++)
+        state.orbitBlades[i] += speed * dt;
       for (const e of state.enemies)
-        if (e.alive && dist(p, e) < e.r + 22) killEnemy(e);
+        if (e.alive)
+          for (const a of state.orbitBlades) {
+            const b = {
+              x: state.player.x + Math.cos(a) * radius,
+              y: state.player.y + Math.sin(a) * radius,
+              r: 9 * shrinkFactor(),
+            };
+            if (dist(e, b) < e.r * shrinkFactor() + b.r) {
+              killEnemy(e);
+              break;
+            }
+          }
+    } else state.orbitBlades = [];
+    if (state.upgrades.voidtrail) {
+      state.voidTrail.push({
+        x: state.player.x,
+        y: state.player.y,
+        life: 0.28,
+      });
+      for (const t of state.voidTrail) t.life -= dt;
+      state.voidTrail = state.voidTrail.filter((t) => t.life > 0);
+      for (const e of state.enemies)
+        if (e.alive)
+          for (const t of state.voidTrail)
+            if (dist(e, t) < e.r * shrinkFactor() + 7) {
+              killEnemy(e);
+              break;
+            }
     }
-    if (state.className === "grappler" && state.grapple) {
-      const g = state.grapple;
-      const d = Math.hypot(g.x - p.x, g.y - p.y);
-      if (d < 8) {
-        p.x = g.x;
-        p.y = g.y;
-        state.grapple = null;
-      } else {
-        const a = Math.atan2(g.y - p.y, g.x - p.x);
-        p.x += Math.cos(a) * Math.min(520 * dt, d);
-        p.y += Math.sin(a) * Math.min(520 * dt, d);
-        for (const e of state.enemies)
-          if (e.alive && Math.hypot(e.x - p.x, e.y - p.y) < e.r + 14)
-            killEnemy(e);
-      }
-    }
-    state.history.push({ x: p.x, y: p.y });
-    if (state.history.length > 160) state.history.shift();
   }
-  function updateShots(dt) {
-    const ar = arenaRect();
-    for (const s of state.shots) {
-      if (s.delay) {
-        s.delay -= dt;
-        continue;
+  function update(dt) {
+    state.player.angle = angleTo(state.player, mouse);
+    if (state.mode === "altar") {
+      state.altarCooldown = Math.max(0, state.altarCooldown - dt);
+      updateDOM();
+      return;
+    }
+    if (state.mode !== "play") {
+      updateDOM();
+      return;
+    }
+    const p = state.player;
+    p.cooldown = Math.max(0, p.cooldown - dt);
+    p.invincible = Math.max(0, (p.invincible || 0) - dt);
+    if (p.jump > 0) p.jump = Math.max(0, p.jump - dt);
+    p.angle = angleTo(p, mouse);
+    const mx =
+        (keys.d || keys.arrowright ? 1 : 0) -
+        (keys.a || keys.arrowleft ? 1 : 0),
+      my =
+        (keys.s || keys.arrowdown ? 1 : 0) - (keys.w || keys.arrowup ? 1 : 0),
+      len = Math.hypot(mx, my) || 1;
+    let sp =
+      (245 + state.upgrades.speed * 35) *
+      Math.max(0.35, 1 - state.chains.heavy * 0.12);
+    if (state.ghost.active) sp *= 0.62 + Math.min(0.25, state.classCore * 0.04);
+    if (state.player.dashTime > 0) {
+      state.player.dashTime -= dt;
+      p.x += Math.cos(state.player.dashAngle) * state.player.dashV * dt;
+      p.y += Math.sin(state.player.dashAngle) * state.player.dashV * dt;
+      for (const e of state.enemies)
+        if (e.alive && dist(p, e) < p.r + e.r + 8) {
+          if (state.className === "dasher") {
+            killEnemy(e);
+            for (let k = 0; k < 10; k++)
+              particle(e.x, e.y, enemyDefs[e.type].color, 0.45);
+          } else if (e.type === "hunter") {
+            hurtPlayer(e);
+          }
+        }
+      if (state.player.dashTime <= 0) state.player.cooldown = 0;
+    } else {
+      p.x = clamp(
+        p.x + (mx / len) * sp * dt,
+        arena.x + 15,
+        arena.x + arena.w - 15,
+      );
+      p.y = clamp(
+        p.y + (my / len) * sp * dt,
+        arena.y + 15,
+        arena.y + arena.h - 15,
+      );
+    }
+    p.x = clamp(p.x, arena.x + 15, arena.x + arena.w - 15);
+    p.y = clamp(p.y, arena.y + 15, arena.y + arena.h - 15);
+    updateExtraUpgrades(dt);
+    if (state.ghost.cooldown > 0)
+      state.ghost.cooldown = Math.max(0, state.ghost.cooldown - dt);
+    if (mouse.down) firePlayer();
+    for (const q of state.echoQueue) q.delay -= dt;
+    for (let i = state.echoQueue.length - 1; i >= 0; i--) {
+      const q = state.echoQueue[i];
+      if (q.delay <= 0) {
+        delete q.delay;
+        state.shots.push(q);
+        state.echoQueue.splice(i, 1);
       }
-      if (s.homing) {
+    }
+    for (const s of state.shots) {
+      if (state.upgrades.homing) {
         let target = null,
-          best = 1e9;
+          best = Infinity;
         for (const e of state.enemies)
           if (e.alive) {
             const d = dist(s, e);
@@ -1167,337 +1281,1020 @@
             }
           }
         if (target) {
-          const a = Math.atan2(target.y - s.y, target.x - s.x),
-            cur = Math.atan2(s.vy, s.vx);
-          let da = Math.atan2(Math.sin(a - cur), Math.cos(a - cur));
-          const na = cur + clamp(da, -s.homing * dt, s.homing * dt);
-          const v = Math.hypot(s.vx, s.vy);
-          s.vx = Math.cos(na) * v;
-          s.vy = Math.sin(na) * v;
+          const ta = angleTo(s, target),
+            ca = Math.atan2(s.vy, s.vx),
+            turnRate = state.upgrades.magnet ? 4.2 : 2.2,
+            turn = Math.max(
+              -turnRate * dt,
+              Math.min(
+                turnRate * dt,
+                Math.atan2(Math.sin(ta - ca), Math.cos(ta - ca)),
+              ),
+            );
+          const na = ca + turn;
+          const sp = Math.hypot(s.vx, s.vy);
+          s.vx = Math.cos(na) * sp;
+          s.vy = Math.sin(na) * sp;
         }
       }
       s.x += s.vx * dt;
       s.y += s.vy * dt;
-      s.life -= dt;
-      if (s.x < ar.l || s.x > ar.r) {
-        if (s.bounce) {
+      if (s.bounces > 0) {
+        if (s.x <= arena.x || s.x >= arena.x + arena.w) {
           s.vx *= -1;
-          s.x = clamp(s.x, ar.l, ar.r);
-        } else s.life = 0;
-      }
-      if (s.y < ar.t || s.y > ar.b) {
-        if (s.bounce) {
+          s.bounces--;
+          s.x = clamp(s.x, arena.x, arena.x + arena.w);
+        }
+        if (s.y <= arena.y || s.y >= arena.y + arena.h) {
           s.vy *= -1;
-          s.y = clamp(s.y, ar.t, ar.b);
-        } else s.life = 0;
+          s.bounces--;
+          s.y = clamp(s.y, arena.y, arena.y + arena.h);
+        }
       }
+      s.life -= dt;
+    }
+    state.shots = state.shots.filter(
+      (s) =>
+        s.life > 0 &&
+        s.x > arena.x - 30 &&
+        s.x < arena.x + arena.w + 30 &&
+        s.y > arena.y - 30 &&
+        s.y < arena.y + arena.h + 30,
+    );
+    if (state.grapple) {
+      const g = state.grapple;
       for (const e of state.enemies)
-        if (e.alive && dist(s, e) < s.r + e.r) {
+        if (e.alive && dist(g, e) < e.r + g.r) {
           killEnemy(e);
-          if (s.pierce > 0) s.pierce--;
-          else {
-            s.life = 0;
-            break;
+          for (let k = 0; k < 10; k++)
+            particle(e.x, e.y, enemyDefs[e.type].color, 0.45);
+        }
+      if (g.phase === "travel") {
+        const d = dist(g, { x: g.targetX, y: g.targetY }),
+          step = (620 + state.classCore * 70) * dt;
+        if (d <= step) {
+          g.x = g.targetX;
+          g.y = g.targetY;
+          g.phase = "pull";
+        } else {
+          g.x += g.vx * dt;
+          g.y += g.vy * dt;
+        }
+      }
+    }
+    if (state.grapple && state.grapple.phase === "pull") {
+      const g = state.grapple;
+      const target = { x: g.targetX, y: g.targetY },
+        d0 = dist(p, target),
+        pull = 285 + state.classCore * 45;
+      if (d0 <= pull * dt) {
+        p.x = g.targetX;
+        p.y = g.targetY;
+        state.grapple = null;
+      } else {
+        const a = angleTo(p, target);
+        p.x += Math.cos(a) * pull * dt;
+        p.y += Math.sin(a) * pull * dt;
+      }
+    }
+    const enemyDt = state.upgrades.time && state.shots.length ? dt * 0.9 : dt;
+    for (const e of state.enemies) if (e.alive) updateEnemy(e, enemyDt);
+    for (const b of state.enemyShots) {
+      if (b.orbit && b.orbitEnemy && b.orbitEnemy.alive) {
+        b.orbitAngle += b.orbitSpeed * dt;
+        b.orbitTime -= dt;
+        b.x = b.orbitEnemy.x + Math.cos(b.orbitAngle) * b.orbitRadius;
+        b.y = b.orbitEnemy.y + Math.sin(b.orbitAngle) * b.orbitRadius;
+        if (b.orbitTime <= 0) {
+          b.orbit = false;
+          b.vx = Math.cos(b.orbitAngle) * b.releaseSpeed;
+          b.vy = Math.sin(b.orbitAngle) * b.releaseSpeed;
+        }
+      }
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      if (b.splitter && !b.splitDone && b.life < 3.9) {
+        b.splitDone = true;
+        const base = Math.atan2(b.vy, b.vx);
+        for (let k = -2; k <= 2; k++)
+          enemyBullet(b.x, b.y, base + k * 0.22, 215);
+      }
+      b.life -= dt;
+    }
+    state.enemyShots = state.enemyShots.filter(
+      (b) =>
+        b.life > 0 &&
+        b.x > arena.x - 100 &&
+        b.x < arena.x + arena.w + 100 &&
+        b.y > arena.y - 100 &&
+        b.y < arena.y + arena.h + 100,
+    );
+    for (const e of state.enemies) {
+      if (!e.alive) continue;
+      for (let j = state.shots.length - 1; j >= 0; j--)
+        if (circleHit(e, state.shots[j])) {
+          for (let k = 0; k < 10; k++)
+            particle(e.x, e.y, enemyDefs[e.type].color, 0.45);
+          killEnemy(e);
+          if (state.shots[j].pierces > 0) state.shots[j].pierces--;
+          else state.shots.splice(j, 1);
+          break;
+        }
+    }
+    for (const b of state.enemyShots)
+      if (dist(p, b) < p.r + b.r && p.jump <= 0) {
+        if (hurtPlayer(b)) return;
+      }
+    if (roundEnemiesDefeated()) {
+      completeLevel();
+      return;
+    }
+    updateHud();
+    updateDOM();
+  }
+  function beamHitTraveling(p, e, a, progress) {
+    const dx = Math.cos(a),
+      dy = Math.sin(a);
+    const px = p.x - e.x,
+      py = p.y - e.y;
+    const along = px * dx + py * dy;
+    const side = Math.abs(px * dy - py * dx);
+    return along >= 0 && along <= progress && side < 16;
+  }
+  function updateEnemy(e, dt) {
+    const p = state.player;
+    e.angle = angleTo(e, p);
+    if (e.type === "shooter") {
+      e.attack -= dt;
+      if (e.attack <= 0) {
+        enemyBullet(e.x, e.y, e.angle, 205);
+        e.attack = attackDelay(2);
+      }
+    } else if (e.type === "shotgun") {
+      e.attack -= dt;
+      if (e.attack <= 0) {
+        for (let k = -1; k <= 1; k++)
+          enemyBullet(e.x, e.y, e.shotAngle + k * 0.28, 185);
+        e.shotAngle += Math.PI / 4;
+        e.attack = attackDelay(2);
+      }
+    } else if (e.type === "beam") {
+      // The BEAM enemy itself is stationary. The beam hazard is what travels.
+      if (e.phase === "idle") {
+        e.phaseTimer -= dt;
+        if (e.phaseTimer <= 0) {
+          e.phase = "warn";
+          e.phaseTimer = attackDelay(3);
+          e.lockedAngle = angleTo(e, p);
+          e.beamProgress = 0;
+        }
+      } else if (e.phase === "warn") {
+        // Keep tracking the player during the warning, then lock the direction.
+        e.lockedAngle = angleTo(e, p);
+        e.phaseTimer -= dt;
+        if (e.phaseTimer <= 0) {
+          e.phase = "fire";
+          e.phaseTimer = attackDelay(3);
+          e.beamProgress = 0;
+        }
+      } else if (e.phase === "fire") {
+        // Slow-moving beam front: the player can outrun it.
+        e.beamProgress += 175 * dt;
+        if (
+          beamHitTraveling(p, e, e.lockedAngle, e.beamProgress) &&
+          p.jump <= 0
+        ) {
+          die();
+          return;
+        }
+        e.phaseTimer -= dt;
+        if (e.phaseTimer <= 0) {
+          e.phase = "cool";
+          e.phaseTimer = attackDelay(10);
+          e.beamProgress = 0;
+        }
+      } else if (e.phase === "cool") {
+        e.phaseTimer -= dt;
+        if (e.phaseTimer <= 0) {
+          e.phase = "idle";
+          e.phaseTimer = 0;
+        }
+      }
+    } else if (e.type === "shock") {
+      if (e.phase === "idle") {
+        e.phaseTimer -= dt;
+        if (e.phaseTimer <= 0) {
+          e.phase = "jump";
+          e.phaseTimer = attackDelay(2);
+          e.targetX = rnd(arena.x + 60, arena.x + arena.w - 60);
+          e.targetY = rnd(arena.y + 60, arena.y + arena.h - 60);
+          e.jumpScale = 1;
+        }
+      } else if (e.phase === "jump") {
+        e.phaseTimer -= dt;
+        e.jumpScale = 1 + Math.sin(((2 - e.phaseTimer) / 2) * Math.PI) * 0.75;
+        const a = angleTo(e, { x: e.targetX, y: e.targetY }),
+          d = Math.min(
+            dist(e, { x: e.targetX, y: e.targetY }),
+            enemySpeed(e) * dt * 1.7,
+          );
+        e.x += Math.cos(a) * d;
+        e.y += Math.sin(a) * d;
+        if (e.phaseTimer <= 0) {
+          e.x = e.targetX;
+          e.y = e.targetY;
+          e.jumpScale = 1;
+          e.phase = "wave";
+          e.wave = 0;
+          if (dist(p, e) < 48 && p.jump <= 0) {
+            if (hurtPlayer(e)) return;
           }
         }
-    }
-    state.shots = state.shots.filter((s) => s.life > 0);
-  }
-  function updateEnemyShots(dt) {
-    const p = state.player;
-    for (const s of state.enemyShots) {
-      s.x += s.vx * dt;
-      s.y += s.vy * dt;
-      s.life -= dt;
-      if (dist(s, p) < s.r + p.r) {
-        hurt("PROJECTILE");
-        s.life = 0;
+      } else {
+        e.wave += 120 * dt;
+        if (Math.abs(dist(p, e) - e.wave) < 14 && p.jump <= 0) {
+          if (hurtPlayer(e)) return;
+        }
+        if (e.wave > Math.max(arena.w, arena.h) * 1.25) {
+          e.phase = "idle";
+          e.phaseTimer = attackDelay(5);
+        }
       }
-    }
-    state.enemyShots = state.enemyShots.filter((s) => s.life > 0);
-    for (const m of state.mines) {
-      m.life -= dt;
-      if (dist(m, p) < m.r + 18) {
-        hurt("MINE");
-        m.life = 0;
+    } else if (e.type === "sword") {
+      // The enemy teleports independently every 5 seconds. Its sword hazard is anchored
+      // around the player at a fixed distance and fixed angle for 6 seconds.
+      e.teleport -= dt;
+      if (e.teleport <= 0) {
+        e.x = rnd(arena.x + 60, arena.x + arena.w - 60);
+        e.y = rnd(arena.y + 60, arena.y + arena.h - 60);
+        e.teleport = 5;
       }
-    }
-    state.mines = state.mines.filter((m) => m.life > 0);
-  }
-  function update(dt) {
-    state.now += dt;
-    if (state.messageT > 0) state.messageT -= dt;
-    if (state.mode === "play") {
-      updatePlayer(dt);
-      for (const e of state.enemies) updateEnemy(e, dt);
-      updateShots(dt);
-      updateEnemyShots(dt);
-      if (state.upgrades.orbit) {
-        const a = state.now * 2;
-        const ox = state.player.x + Math.cos(a) * 45,
-          oy = state.player.y + Math.sin(a) * 45;
-        for (const e of state.enemies)
-          if (e.alive && Math.hypot(e.x - ox, e.y - oy) < e.r + 9) killEnemy(e);
-      }
-      if (
-        state.upgrades.voidtrail &&
-        Math.hypot(state.player.vx, state.player.vy) > 20
-      ) {
-        state.effects.push({
-          kind: "trail",
-          x: state.player.x,
-          y: state.player.y,
-          r: 7,
-          life: 0.45,
-        });
-      }
-      if (state.chains.blackhole && Math.floor(state.now / 7) % 2 === 0) {
-        const ar = arenaRect();
-        const bx = (ar.l + ar.r) / 2 + Math.cos(state.now * 0.3) * 150,
-          by = (ar.t + ar.b) / 2 + Math.sin(state.now * 0.4) * 100;
+      if (e.phase === "idle") {
+        e.swordTimer += dt;
+        // While waiting, keep the smaller sword just outside the player.
+        e.swordX = p.x - Math.cos(e.swordAngle) * 100;
+        e.swordY = p.y - Math.sin(e.swordAngle) * 100;
+        if (e.swordTimer >= 6) {
+          e.phase = "windup";
+          e.phaseTimer = 1;
+        }
+      } else if (e.phase === "windup") {
+        e.swordX = p.x - Math.cos(e.swordAngle) * 100;
+        e.swordY = p.y - Math.sin(e.swordAngle) * 100;
+        e.phaseTimer -= dt;
+        if (e.phaseTimer <= 0) {
+          e.phase = "strike";
+          e.swordActive = true;
+        }
+      } else if (e.phase === "strike") {
+        // Once it attacks, the sword leaves the player and travels in the direction it points.
+        const speed = 300;
+        e.swordX += Math.cos(e.swordAngle) * speed * dt;
+        e.swordY += Math.sin(e.swordAngle) * speed * dt;
+        const dx = p.x - e.swordX,
+          dy = p.y - e.swordY;
+        const along = dx * Math.cos(e.swordAngle) + dy * Math.sin(e.swordAngle);
+        const side = Math.abs(
+          dx * Math.sin(e.swordAngle) - dy * Math.cos(e.swordAngle),
+        );
+        if (along >= -80 && along <= 10 && side < 16 && p.jump <= 0) {
+          if (hurtPlayer(e)) return;
+        }
         if (
-          Math.hypot(state.player.x - bx, state.player.y - by) < 55 &&
-          !state.player.jump
-        )
-          hurt("BLACK HOLE");
+          e.swordX < arena.x - 120 ||
+          e.swordX > arena.x + arena.w + 120 ||
+          e.swordY < arena.y - 120 ||
+          e.swordY > arena.y + arena.h + 120
+        ) {
+          e.phase = "idle";
+          e.swordActive = false;
+          e.swordTimer = 0;
+          e.swordDelay = attackDelay(6);
+          e.swordAngle = rnd(-Math.PI, Math.PI);
+        }
       }
-      if (!state.enemies.some((e) => e.alive)) completeRound();
-    } else if (state.mode === "dead") {
+    } else if (e.type === "dasher") {
+      if (e.dashPhase === "idle") {
+        e.dashTimer -= dt;
+        if (e.dashTimer <= 0) {
+          e.dashPhase = "warn";
+          e.dashTimer = 1;
+          e.dashX = p.x;
+          e.dashY = p.y;
+          e.dashAngle = angleTo(e, { x: e.dashX, y: e.dashY });
+        }
+      } else if (e.dashPhase === "warn") {
+        e.dashTimer -= dt;
+        if (e.dashTimer <= 0) e.dashPhase = "dash";
+      } else {
+        const sp = enemySpeed(e) * 5;
+        e.x += Math.cos(e.dashAngle) * sp * dt;
+        e.y += Math.sin(e.dashAngle) * sp * dt;
+        if (dist(p, e) < p.r + e.r && p.jump <= 0) {
+          if (hurtPlayer(e)) return;
+        }
+        if (
+          e.x < arena.x - 80 ||
+          e.x > arena.x + arena.w + 80 ||
+          e.y < arena.y - 80 ||
+          e.y > arena.y + arena.h + 80
+        ) {
+          e.x = clamp(e.x, arena.x + 30, arena.x + arena.w - 30);
+          e.y = clamp(e.y, arena.y + 30, arena.y + arena.h - 30);
+          e.dashPhase = "idle";
+          e.dashTimer = attackDelay(5);
+        }
+      }
+    } else if (e.type === "burst") {
+      e.attack -= dt;
+      if (e.attack <= 0) {
+        for (let k = 0; k < 12; k++) enemyBullet(e.x, e.y, (k * TAU) / 12, 155);
+        e.attack = attackDelay(5);
+      }
+    } else if (e.type === "hunter") {
+      const a = angleTo(e, p),
+        sp = enemySpeed(e);
+      e.x += Math.cos(a) * sp * dt;
+      e.y += Math.sin(a) * sp * dt;
+      e.x = clamp(e.x, arena.x + 25, arena.x + arena.w - 25);
+      e.y = clamp(e.y, arena.y + 25, arena.y + arena.h - 25);
+      if (dist(p, e) < p.r + e.r && p.jump <= 0) {
+        if (hurtPlayer(e)) return;
+      }
+    } else if (e.type === "mine") {
+      e.mineTimer -= dt;
+      if (e.mineTimer <= 0) {
+        e.mines.push({ x: e.x, y: e.y, life: 12 });
+        e.mineTimer = attackDelay(4);
+      }
+      for (const m of e.mines) m.life -= dt;
+      e.mines = e.mines.filter((m) => m.life > 0);
+      for (const m of e.mines)
+        if (dist(p, m) < 28 && p.jump <= 0) {
+          if (hurtPlayer(m)) return;
+        }
+    } else if (e.type === "orbiter") {
+      e.orbitTimer -= dt;
+      if (e.orbitTimer <= 0) {
+        for (let k = 0; k < 3; k++) {
+          const a = e.angle + (k * TAU) / 3;
+          state.enemyShots.push({
+            x: e.x + Math.cos(a) * 42,
+            y: e.y + Math.sin(a) * 42,
+            vx: 0,
+            vy: 0,
+            r: 7,
+            life: 8,
+            orbit: true,
+            orbitEnemy: e,
+            orbitAngle: a,
+            orbitSpeed: 1.8,
+            orbitRadius: 42,
+            orbitTime: 2.5,
+            releaseSpeed: 190,
+          });
+        }
+        e.orbitTimer = attackDelay(5);
+      }
+    } else if (e.type === "repeater") {
+      e.historyTimer += dt;
+      if (e.historyTimer >= 0.12) {
+        e.historyTimer = 0;
+        e.history.push({ x: p.x, y: p.y });
+        if (e.history.length > 55) e.history.shift();
+      }
+      if (e.history.length > 18) {
+        const t = e.history[Math.max(0, e.history.length - 18)];
+        const a = angleTo(e, t);
+        e.x += Math.cos(a) * enemySpeed(e) * dt;
+        e.y += Math.sin(a) * enemySpeed(e) * dt;
+      }
+      e.x = clamp(e.x, arena.x + 20, arena.x + arena.w - 20);
+      e.y = clamp(e.y, arena.y + 20, arena.y + arena.h - 20);
+      if (dist(p, e) < p.r + e.r && p.jump <= 0) {
+        if (hurtPlayer(e)) return;
+      }
+    } else if (e.type === "mirror") {
+      e.mirrorTimer -= dt;
+      const tx = arena.x + arena.w - (p.x - arena.x);
+      const ty = arena.y + arena.h - (p.y - arena.y);
+      const a = angleTo(e, { x: tx, y: ty });
+      e.x += Math.cos(a) * enemySpeed(e) * dt;
+      e.y += Math.sin(a) * enemySpeed(e) * dt;
+      e.x = clamp(e.x, arena.x + 20, arena.x + arena.w - 20);
+      e.y = clamp(e.y, arena.y + 20, arena.y + arena.h - 20);
+      if (e.mirrorTimer <= 0) {
+        enemyBullet(e.x, e.y, angleTo(e, p), 250);
+        e.mirrorTimer = attackDelay(2.5);
+      }
+      if (dist(p, e) < p.r + e.r && p.jump <= 0) {
+        if (hurtPlayer(e)) return;
+      }
+    } else if (e.type === "timekeeper") {
+      e.timeTimer += dt;
+      if (e.timeTimer >= 0.1) {
+        e.timeTimer = 0;
+        e.timeHistory.push({ x: p.x, y: p.y });
+        if (e.timeHistory.length > 80) e.timeHistory.shift();
+      }
+      e.x += Math.cos(e.angle) * enemySpeed(e) * 0.35 * dt;
+      e.y += Math.sin(e.angle) * enemySpeed(e) * 0.35 * dt;
+      e.x = clamp(e.x, arena.x + 25, arena.x + arena.w - 25);
+      e.y = clamp(e.y, arena.y + 25, arena.y + arena.h - 25);
+      if (e.timeHistory.length > 30) {
+        e.attack -= dt;
+        if (e.attack <= 0) {
+          const t = e.timeHistory[Math.max(0, e.timeHistory.length - 30)];
+          enemyBullet(e.x, e.y, angleTo(e, t), 235);
+          e.attack = attackDelay(2.5);
+        }
+      }
+    } else if (e.type === "voidcaster") {
+      e.voidTimer -= dt;
+      if (e.voidPhase === "mark" && e.voidTimer <= 0) {
+        e.voidMarks = [];
+        for (let k = 0; k < 4; k++) {
+          const a = Math.random() * TAU;
+          const d = rnd(70, 190);
+          e.voidMarks.push({
+            x: clamp(
+              p.x + Math.cos(a) * d,
+              arena.x + 35,
+              arena.x + arena.w - 35,
+            ),
+            y: clamp(
+              p.y + Math.sin(a) * d,
+              arena.y + 35,
+              arena.y + arena.h - 35,
+            ),
+          });
+        }
+        e.voidPhase = "detonate";
+        e.voidTimer = 1.4;
+      } else if (e.voidPhase === "detonate" && e.voidTimer <= 0) {
+        for (const m of e.voidMarks) {
+          for (let k = 0; k < 8; k++) enemyBullet(m.x, m.y, (k * TAU) / 8, 175);
+        }
+        e.voidPhase = "mark";
+        e.voidTimer = attackDelay(4);
+      }
+    } else if (e.type === "teleporter") {
+      e.teleportTimer -= dt;
+      if (e.teleportTimer <= 0) {
+        e.x = rnd(arena.x + 45, arena.x + arena.w - 45);
+        e.y = rnd(arena.y + 45, arena.y + arena.h - 45);
+        for (let k = -1; k <= 1; k++)
+          enemyBullet(e.x, e.y, e.angle + k * 0.2, 270);
+        e.teleportTimer = attackDelay(3);
+      }
+    } else if (e.type === "splitter") {
+      e.splitterTimer -= dt;
+      if (e.splitterTimer <= 0) {
+        state.enemyShots.push({
+          x: e.x + Math.cos(e.angle) * 24,
+          y: e.y + Math.sin(e.angle) * 24,
+          vx: Math.cos(e.angle) * 125,
+          vy: Math.sin(e.angle) * 125,
+          r: 12,
+          life: 5,
+          splitter: true,
+        });
+        e.splitterTimer = attackDelay(3.5);
+      }
+    } else if (e.type === "predictor") {
+      e.predictorTimer -= dt;
+      if (e.predictorTimer <= 0) {
+        const mx =
+          (keys.d || keys.arrowright ? 1 : 0) -
+          (keys.a || keys.arrowleft ? 1 : 0);
+        const my =
+          (keys.s || keys.arrowdown ? 1 : 0) - (keys.w || keys.arrowup ? 1 : 0);
+        const len = Math.hypot(mx, my) || 1;
+        const lead = 0.7;
+        const target = {
+          x: p.x + (mx / len) * 245 * lead,
+          y: p.y + (my / len) * 245 * lead,
+        };
+        enemyBullet(e.x, e.y, angleTo(e, target), 245);
+        e.predictorTimer = attackDelay(2.5);
+      }
+    } else if (e.type === "pulsar") {
+      e.pulseTimer -= dt;
+      if (e.pulseTimer <= 0 && e.pulseRadius <= 0) {
+        e.pulseRadius = 8;
+        e.pulseTimer = attackDelay(5);
+      }
+      if (e.pulseRadius > 0) {
+        e.pulseRadius += 210 * dt;
+        if (Math.abs(dist(p, e) - e.pulseRadius) < 16 && p.jump <= 0) {
+          if (hurtPlayer(e)) return;
+        }
+        if (e.pulseRadius > Math.max(arena.w, arena.h) * 1.25)
+          e.pulseRadius = 0;
+      }
+    } else if (e.type === "mimic") {
+      e.mimicTimer -= dt;
+      const a = angleTo(e, p);
+      e.x += Math.cos(a) * enemySpeed(e) * 0.55 * dt;
+      e.y += Math.sin(a) * enemySpeed(e) * 0.55 * dt;
+      if (e.mimicTimer <= 0) {
+        for (let k = -2; k <= 2; k++)
+          enemyBullet(e.x, e.y, e.angle + k * 0.18, 225);
+        e.mimicTimer = attackDelay(3);
+      }
+      if (dist(p, e) < p.r + e.r && p.jump <= 0) {
+        if (hurtPlayer(e)) return;
+      }
+    } else if (e.type === "voidhunter") {
+      if (e.huntPhase === "track") {
+        e.huntTimer -= dt;
+        e.x += Math.cos(e.angle) * enemySpeed(e) * dt;
+        e.y += Math.sin(e.angle) * enemySpeed(e) * dt;
+        if (e.huntTimer <= 0) {
+          e.huntTargetX = p.x;
+          e.huntTargetY = p.y;
+          e.huntPhase = "lunge";
+          e.huntTimer = 1.2;
+          e.angle = angleTo(e, { x: e.huntTargetX, y: e.huntTargetY });
+        }
+      } else {
+        e.x += Math.cos(e.angle) * 430 * dt;
+        e.y += Math.sin(e.angle) * 430 * dt;
+        if (dist(p, e) < p.r + e.r + 4 && p.jump <= 0) {
+          if (hurtPlayer(e)) return;
+        }
+        e.huntTimer -= dt;
+        if (
+          e.huntTimer <= 0 ||
+          e.x < arena.x - 100 ||
+          e.x > arena.x + arena.w + 100 ||
+          e.y < arena.y - 100 ||
+          e.y > arena.y + arena.h + 100
+        ) {
+          e.x = clamp(e.x, arena.x + 30, arena.x + arena.w - 30);
+          e.y = clamp(e.y, arena.y + 30, arena.y + arena.h - 30);
+          e.huntPhase = "track";
+          e.huntTimer = attackDelay(4);
+        }
+      }
     }
-    state.effects.forEach((e) => (e.life -= dt));
-    state.effects = state.effects.filter((e) => e.life > 0);
+  }
+  function pointBeamHit(p, e, a) {
+    const dx = p.x - e.x,
+      dy = p.y - e.y;
+    return Math.abs(dx * Math.sin(a) - dy * Math.cos(a)) < 14;
+  }
+  function die() {
+    if (state.mode !== "play") return;
+    state.mode = "dead";
+    state.player.alive = false;
+    gameOverText.textContent = `You reached level ${state.level}.`;
+    gameOverScreen.classList.remove("hidden");
+    updateDOM();
+  }
+  function roundEnemiesDefeated() {
+    if (state.mode !== "play" || !state.roundEnemyIds.length) return false;
+    for (const id of state.roundEnemyIds) {
+      const e = state.enemies.find((x) => x.id === id);
+      if (e && e.alive) return false;
+    }
+    return true;
+  }
+  function completeLevel() {
+    if (state.mode !== "play" || state.roundTransition) return;
+    state.roundTransition = true;
+    state.mode = "between";
+    state.transitionToken++;
+    const token = state.transitionToken;
+    const completedRound = state.round;
+
+    showMessage("ALL ENEMIES DEFEATED");
+    state.enemyShots = [];
+    state.shots = [];
+    state.echoQueue = [];
+
+    // Progression is based on the round that was just completed.
+    // Chain: every 3 rounds. Upgrade: every 5 rounds. If both happen,
+    // Chain is chosen first, then Upgrade, then the physical altars.
+    state.level = completedRound + 1;
+    state.round = completedRound + 1;
+    state.pendingChain = completedRound % 3 === 0;
+    state.pendingUpgrade = completedRound % 5 === 0;
+
+    setTimeout(() => {
+      if (token !== state.transitionToken || state.mode !== "between") return;
+      state.roundTransition = false;
+      if (state.pendingChain) {
+        showChains();
+      } else if (state.pendingUpgrade) {
+        showUpgrades();
+      } else {
+        showAltar();
+      }
+      updateHud();
+      updateDOM();
+    }, 500);
   }
 
-  // ---------- rendering ----------
+  function particle(x, y, c, life) {
+    state.particles.push({
+      x,
+      y,
+      vx: rnd(-70, 70),
+      vy: rnd(-70, 70),
+      life,
+      max: life,
+      color: c,
+    });
+  }
+  function updateParticles(dt) {
+    for (const p of state.particles) {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.life -= dt;
+    }
+    state.particles = state.particles.filter((p) => p.life > 0);
+  }
+  function showMessage(t) {
+    message.textContent = t;
+    message.style.opacity = 1;
+    clearTimeout(showMessage.t);
+    showMessage.t = setTimeout(() => (message.style.opacity = 0), 1000);
+  }
+  function aliveEnemyCount() {
+    let n = 0;
+    for (const e of state.enemies) if (e.alive) n++;
+    return n;
+  }
+  function updateHud() {
+    levelText.textContent = state.level;
+    roundText.textContent = state.round;
+    enemyText.textContent = aliveEnemyCount();
+  }
   function draw() {
     ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = "#050009";
-    ctx.fillRect(0, 0, W, H);
-    const ar = arenaRect();
-    ctx.fillStyle = "#0d0614";
-    ctx.fillRect(ar.l, ar.t, ar.r - ar.l, ar.b - ar.t);
-    ctx.strokeStyle = "#4d155b";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(ar.l, ar.t, ar.r - ar.l, ar.b - ar.t);
-    if (
-      state.mode === "play" ||
-      state.mode === "between" ||
-      state.mode === "dead"
-    ) {
-      for (const e of state.enemies) if (e.alive) drawEnemy(e);
-      for (const m of state.mines) {
-        ctx.strokeStyle = "#ff7b35";
-        ctx.beginPath();
-        ctx.arc(m.x, m.y, m.r, 0, TAU);
-        ctx.stroke();
-      }
-      for (const s of state.shots) {
-        ctx.fillStyle = "#fff";
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, s.r, 0, TAU);
-        ctx.fill();
-      }
-      for (const s of state.enemyShots) {
-        ctx.fillStyle = "#ff3fbd";
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, s.r, 0, TAU);
-        ctx.fill();
-      }
-      for (const e of state.effects) drawEffect(e);
-      drawPlayer();
-    }
-    if (state.messageT > 0 && state.mode === "play") {
-      ctx.fillStyle = "rgba(255,255,255,.05)";
-      ctx.fillRect(ar.l, ar.t, ar.r - ar.l, 2);
-    }
+    drawBackground();
+    drawArena();
+    if (state.mode !== "start") drawWorld();
+    drawParticles();
+    requestAnimationFrame(draw);
   }
-  function drawPlayer() {
-    const p = state.player;
-    const scale = Math.pow(0.9, state.upgrades.shrink);
+  function drawBackground() {
+    const g = ctx.createRadialGradient(
+      W / 2,
+      H / 2,
+      20,
+      W / 2,
+      H / 2,
+      Math.max(W, H) * 0.7,
+    );
+    g.addColorStop(0, "#190522");
+    g.addColorStop(1, "#030106");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  }
+  function drawArena() {
     ctx.save();
-    ctx.translate(p.x, p.y);
-    ctx.scale(scale, scale);
-    if (p.ghost) {
-      ctx.globalAlpha = 0.5;
-      ctx.strokeStyle = "#b995ff";
-      ctx.lineWidth = 4;
+    ctx.fillStyle = "#07040c";
+    ctx.fillRect(arena.x, arena.y, arena.w, arena.h);
+    ctx.strokeStyle = "#6b2b91";
+    ctx.lineWidth = 2;
+    ctx.shadowColor = "#ff2bd6";
+    ctx.shadowBlur = 18;
+    ctx.strokeRect(arena.x, arena.y, arena.w, arena.h);
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "#21132d";
+    ctx.lineWidth = 1;
+    for (let x = arena.x + 58; x < arena.x + arena.w; x += 58) {
       ctx.beginPath();
-      ctx.arc(0, 0, 22, 0, TAU);
+      ctx.moveTo(x, arena.y);
+      ctx.lineTo(x, arena.y + arena.h);
       ctx.stroke();
     }
-    ctx.fillStyle = p.inv > 0 ? "#fff" : "#ff4bd8";
-    ctx.shadowBlur = 18;
-    ctx.shadowColor = "#ff35d0";
-    ctx.beginPath();
-    ctx.moveTo(18, 0);
-    ctx.lineTo(-12, -10);
-    ctx.lineTo(-8, 0);
-    ctx.lineTo(-12, 10);
-    ctx.closePath();
-    ctx.fill();
+    for (let y = arena.y + 58; y < arena.y + arena.h; y += 58) {
+      ctx.beginPath();
+      ctx.moveTo(arena.x, y);
+      ctx.lineTo(arena.x + arena.w, y);
+      ctx.stroke();
+    }
     ctx.restore();
+  }
+  function drawWorld() {
+    for (const e of state.enemies) if (e.alive) drawEnemy(e);
+    for (const b of state.enemyShots) drawEnemyShot(b);
+    for (const s of state.shots) drawShot(s);
+    if (state.grapple) {
+      ctx.save();
+      ctx.strokeStyle = "#6ff7ff";
+      ctx.lineWidth = 2;
+      ctx.shadowColor = "#6ff7ff";
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.moveTo(state.player.x, state.player.y);
+      ctx.lineTo(state.grapple.x, state.grapple.y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(state.grapple.x, state.grapple.y, 8, 0, TAU);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
   function drawEnemy(e) {
-    const s = Math.pow(0.9, state.upgrades.shrink);
+    const c = enemyDefs[e.type].color;
     ctx.save();
     ctx.translate(e.x, e.y);
-    ctx.scale(s, s);
-    ctx.fillStyle = ENEMIES[e.type].color;
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = ENEMIES[e.type].color;
-    ctx.beginPath();
-    ctx.arc(0, 0, e.r, 0, TAU);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = "#fff";
-    ctx.globalAlpha = 0.65;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    if (e.type === "beam") {
-      ctx.rotate(e.beamAngle);
-      ctx.fillStyle = e.beamState === "fire" ? "#ff2dcb" : "#d76bff";
-      ctx.globalAlpha = e.beamState === "fire" ? 0.25 : 0.1;
-      ctx.fillRect(0, -7, 1000, 14);
-      ctx.globalAlpha = 1;
-    }
-    if (e.type === "sword") {
-      ctx.rotate(e.swordAngle);
-      ctx.strokeStyle = "#fff";
-      ctx.lineWidth = 6;
+    const sf = shrinkFactor();
+    ctx.scale((e.jumpScale || 1) * sf, (e.jumpScale || 1) * sf);
+    ctx.shadowColor = c;
+    ctx.shadowBlur = 22;
+    ctx.fillStyle = c;
+    if (e.type === "shooter") {
       ctx.beginPath();
-      ctx.moveTo(18, 0);
-      ctx.lineTo(135, 0);
-      ctx.stroke();
-      ctx.strokeStyle = "#ff65bc";
-      ctx.lineWidth = 12;
-      ctx.beginPath();
-      ctx.moveTo(25, -8);
-      ctx.lineTo(25, 8);
-      ctx.stroke();
-    }
-    if (e.type === "shock" && e.phase === "jump") {
-      ctx.globalAlpha = 0.25;
-      ctx.beginPath();
-      ctx.arc(0, 0, 28, 0, TAU);
+      ctx.arc(0, 0, 18, 0, TAU);
       ctx.fill();
-    }
-    ctx.restore();
-  }
-  function drawEffect(e) {
-    if (e.kind === "gravity") {
-      ctx.strokeStyle = "#a878ff88";
+      ctx.fillStyle = "#16071d";
       ctx.beginPath();
-      ctx.arc(e.x, e.y, e.r, 0, TAU);
+      ctx.arc(0, 0, 8, 0, TAU);
+      ctx.fill();
+    } else if (e.type === "shotgun") {
+      ctx.rotate(Math.PI / 4);
+      ctx.fillRect(-17, -17, 34, 34);
+      ctx.fillStyle = "#16071d";
+      ctx.fillRect(-7, -7, 14, 14);
+    } else if (e.type === "beam") {
+      ctx.beginPath();
+      ctx.moveTo(0, -21);
+      ctx.lineTo(18, 18);
+      ctx.lineTo(-18, 18);
+      ctx.closePath();
+      ctx.fill();
+    } else if (e.type === "shock") {
+      ctx.beginPath();
+      ctx.arc(0, 0, 18, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 2;
       ctx.stroke();
-    } else if (e.kind === "phantom") {
-      ctx.strokeStyle = "#b9a0ff";
+    } else if (e.type === "dasher") {
+      ctx.rotate(e.dashAngle);
       ctx.beginPath();
-      ctx.arc(e.x, e.y, e.r, 0, TAU);
+      ctx.moveTo(22, 0);
+      ctx.lineTo(-16, -13);
+      ctx.lineTo(-8, 0);
+      ctx.lineTo(-16, 13);
+      ctx.closePath();
+      ctx.fill();
+    } else if (e.type === "burst") {
+      ctx.beginPath();
+      ctx.arc(0, 0, 19, 0, TAU);
+      ctx.fill();
+      for (let k = 0; k < 8; k++) {
+        const a = (k * TAU) / 8;
+        ctx.fillRect(Math.cos(a) * 24 - 3, Math.sin(a) * 24 - 3, 6, 6);
+      }
+    } else if (e.type === "hunter") {
+      ctx.beginPath();
+      ctx.arc(0, 0, 18, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = "#06140b";
+      ctx.beginPath();
+      ctx.arc(0, 0, 7, 0, TAU);
+      ctx.fill();
+    } else if (e.type === "mine") {
+      ctx.rotate(Math.PI / 4);
+      ctx.fillRect(-16, -16, 32, 32);
+      ctx.fillStyle = "#06121a";
+      ctx.fillRect(-6, -6, 12, 12);
+    } else if (e.type === "orbiter") {
+      ctx.beginPath();
+      ctx.arc(0, 0, 16, 0, TAU);
+      ctx.fill();
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, 27, 0, TAU);
       ctx.stroke();
     } else {
-      ctx.fillStyle = "#ff4bd8";
-      ctx.globalAlpha = Math.max(0, e.life * 2);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillRect(-16, -16, 32, 32);
+      ctx.fillStyle = "#16071d";
+      ctx.fillRect(-5, -5, 10, 10);
+    }
+    ctx.restore();
+    if (e.type === "beam" && (e.phase === "warn" || e.phase === "fire")) {
+      ctx.save();
+      ctx.strokeStyle = e.phase === "warn" ? c + "66" : c;
+      ctx.lineWidth = e.phase === "warn" ? 8 : 18;
+      ctx.shadowColor = c;
+      ctx.shadowBlur = e.phase === "fire" ? 24 : 8;
       ctx.beginPath();
-      ctx.arc(e.x, e.y, e.r || 4, 0, TAU);
-      ctx.fill();
-      ctx.globalAlpha = 1;
+      ctx.moveTo(e.x, e.y);
+      const len = e.phase === "fire" ? e.beamProgress : 1500;
+      ctx.lineTo(
+        e.x + Math.cos(e.lockedAngle) * len,
+        e.y + Math.sin(e.lockedAngle) * len,
+      );
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (e.type === "shock" && e.phase === "jump") {
+      ctx.save();
+      ctx.strokeStyle = "#ff315f";
+      ctx.setLineDash([8, 8]);
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(e.targetX, e.targetY, 34, 0, TAU);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (e.type === "shock" && e.phase === "wave") {
+      ctx.save();
+      ctx.strokeStyle = "#ff315f";
+      ctx.lineWidth = 7;
+      ctx.shadowColor = "#ff315f";
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.wave, 0, TAU);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (e.type === "dasher" && e.dashPhase === "warn") {
+      ctx.save();
+      ctx.strokeStyle = "#ff7a3d";
+      ctx.setLineDash([8, 8]);
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(e.x, e.y);
+      ctx.lineTo(e.dashX, e.dashY);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (e.type === "mine") {
+      for (const m of e.mines) {
+        ctx.save();
+        ctx.translate(m.x, m.y);
+        ctx.strokeStyle = "#55d9ff";
+        ctx.shadowColor = "#55d9ff";
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.arc(0, 0, 13, 0, TAU);
+        ctx.stroke();
+        ctx.fillStyle = "#55d9ff";
+        ctx.beginPath();
+        ctx.arc(0, 0, 4, 0, TAU);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+    if (e.type === "repeater") {
+      ctx.save();
+      ctx.strokeStyle = c + "66";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      const h = e.history || [];
+      if (h.length) {
+        ctx.moveTo(h[0].x, h[0].y);
+        for (let i = 1; i < h.length; i++) ctx.lineTo(h[i].x, h[i].y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    if (e.type === "voidcaster" && e.voidMarks) {
+      ctx.save();
+      for (const m of e.voidMarks) {
+        ctx.strokeStyle = c;
+        ctx.shadowColor = c;
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, 18, 0, TAU);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    if (e.type === "pulsar" && e.pulseRadius > 0) {
+      ctx.save();
+      ctx.strokeStyle = c;
+      ctx.lineWidth = 8;
+      ctx.shadowColor = c;
+      ctx.shadowBlur = 18;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.pulseRadius, 0, TAU);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (e.type === "voidhunter" && e.huntPhase === "lunge") {
+      ctx.save();
+      ctx.strokeStyle = c + "88";
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.moveTo(e.x, e.y);
+      ctx.lineTo(e.x - Math.cos(e.angle) * 90, e.y - Math.sin(e.angle) * 90);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (e.type === "sword") {
+      const sx = e.swordX,
+        sy = e.swordY;
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.rotate(e.swordAngle);
+      ctx.strokeStyle = "#f7cfff";
+      ctx.lineWidth = e.phase === "windup" ? 6 : 4;
+      ctx.shadowColor = "#ff2bd6";
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(80, 0);
+      ctx.stroke();
+      ctx.restore();
+      if (e.phase !== "strike") {
+        ctx.save();
+        ctx.strokeStyle = "#ff2bd655";
+        ctx.setLineDash([5, 8]);
+        ctx.beginPath();
+        ctx.arc(state.player.x, state.player.y, 100, 0, TAU);
+        ctx.stroke();
+        ctx.restore();
+      }
     }
   }
-
-  function deathScreen() {
-    overlay(
-      "RUN OVER",
-      state.deathReason + " • Reached round " + state.round + ".",
-      ["RESTART"],
-      {
-        RESTART: {
-          name: "RESTART",
-          desc: "Return to the class selection and begin a new run.",
-          icon: "↻",
-        },
-      },
-      "class",
-      "#ff3b91",
-    );
-    state.mode = "dead";
-    document.querySelectorAll(".vbCard").forEach(
-      (b) =>
-        (b.onclick = () => {
-          state.mode = "start";
-          state.round = 1;
-          state.level = 1;
-          state.enemies = [];
-          state.shots = [];
-          state.enemyShots = [];
-          state.mines = [];
-          state.upgrades = Object.fromEntries(
-            Object.keys(UPGRADES).map((k) => [k, 0]),
-          );
-          state.chains = Object.fromEntries(
-            Object.keys(CHAINS).map((k) => [k, 0]),
-          );
-          startScreen();
-        }),
-    );
+  function drawShot(s) {
+    ctx.save();
+    ctx.fillStyle = "#fff";
+    ctx.shadowColor = "#ff2bd6";
+    ctx.shadowBlur = 18;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, TAU);
+    ctx.fill();
+    ctx.restore();
   }
-
-  // ---------- input ----------
-  window.addEventListener("keydown", (e) => {
-    const k = e.key.toLowerCase();
-    if (
-      [
-        "arrowup",
-        "arrowdown",
-        "arrowleft",
-        "arrowright",
-        " ",
-        "w",
-        "a",
-        "s",
-        "d",
-        "e",
-      ].includes(k)
-    )
-      e.preventDefault();
-    keys.add(k);
-  });
-  window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
-  canvas.addEventListener("mousemove", (e) => {
+  function drawEnemyShot(b) {
+    ctx.save();
+    ctx.fillStyle = "#a66aff";
+    ctx.shadowColor = "#ff2bd6";
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+  function drawParticles() {
+    for (const p of state.particles) {
+      ctx.globalAlpha = Math.max(0, p.life / p.max);
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 2.5, 0, TAU);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  function updateInputPos(e) {
     const r = canvas.getBoundingClientRect();
     mouse.x = e.clientX - r.left;
     mouse.y = e.clientY - r.top;
-    mouse.inside = true;
-    if (state.player)
-      state.player.angle = Math.atan2(
-        mouse.y - state.player.y,
-        mouse.x - state.player.x,
-      );
-  });
-  canvas.addEventListener("mouseleave", () => (mouse.inside = false));
+  }
+  canvas.addEventListener("mousemove", updateInputPos);
   canvas.addEventListener("mousedown", (e) => {
-    if (e.button !== 0) return;
     mouse.down = true;
-    if (state.mode === "play") firePlayer();
+    updateInputPos(e);
+    firePlayer();
   });
   window.addEventListener("mouseup", () => (mouse.down = false));
-  window.addEventListener("click", (e) => {
-    if (state.mode === "play" && e.target === canvas) firePlayer();
+  window.addEventListener("keydown", (e) => {
+    const k = e.key.toLowerCase();
+    keys[k] = true;
+    if (k === " ") {
+      e.preventDefault();
+      if (state.mode === "play") tryJump();
+    }
+    if (k === "e" && state.mode === "play") {
+      if (state.className === "dasher") startDash();
+      else if (state.className === "ghost") toggleGhost();
+    }
   });
-
-  // Main loop.
-  function loop(t) {
-    const dt = Math.min(0.033, (t - last) / 1000);
-    last = t;
+  window.addEventListener("keyup", (e) => (keys[e.key.toLowerCase()] = false));
+  canvas.addEventListener(
+    "touchstart",
+    (e) => {
+      e.preventDefault();
+      const t = e.touches[0];
+      mouse.x = t.clientX - canvas.getBoundingClientRect().left;
+      mouse.y = t.clientY - canvas.getBoundingClientRect().top;
+      mouse.down = true;
+      firePlayer();
+    },
+    { passive: false },
+  );
+  canvas.addEventListener("touchend", () => (mouse.down = false));
+  resize();
+  resetPlayer();
+  updateHud();
+  draw();
+  (function loop(now) {
+    const dt = Math.min(0.033, (now - last) / 1000);
+    last = now;
     update(dt);
-    draw();
-    if (
-      state.mode === "play" ||
-      state.mode === "between" ||
-      state.mode === "dead"
-    )
-      hud();
-    raf = requestAnimationFrame(loop);
-  }
-  startScreen();
-  raf = requestAnimationFrame(loop);
+    updateParticles(dt);
+    requestAnimationFrame(loop);
+  })(performance.now());
 })();
