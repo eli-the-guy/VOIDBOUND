@@ -687,17 +687,39 @@
   function showUpgrades() {
     state.mode = "upgrade";
     upgradeChoices.innerHTML = "";
-    Object.keys(upgradeDefs)
-      .sort(() => Math.random() - 0.5)
-      .slice(0, 3)
-      .forEach((k) => {
-        const u = upgradeDefs[k],
-          c = document.createElement("div");
-        c.className = "choice";
-        c.innerHTML = `<div class="tag">${u.icon}</div><div class="name">${u.name}</div><div class="desc">${u.desc}</div>`;
-        c.onclick = () => chooseUpgrade(k);
-        upgradeChoices.appendChild(c);
-      });
+    const panel = upgradeScreen.querySelector(".panel");
+    if (panel) {
+      const heading = panel.querySelector("#chainMenuTitle");
+      if (heading) heading.remove();
+      const sub = panel.querySelector("#chainMenuHint");
+      if (sub) sub.remove();
+    }
+    const upgradeKeys = Object.keys(upgradeDefs);
+    const newUpgradeKeys = [
+      "triple",
+      "bounce",
+      "voidburst",
+      "orbit",
+      "echo",
+      "time",
+      "phasejump",
+      "voidtrail",
+      "magnet",
+      "shrink",
+    ].filter((k) => upgradeDefs[k]);
+    const guaranteedNew =
+      newUpgradeKeys[Math.floor(Math.random() * newUpgradeKeys.length)];
+    const remainingUpgrades = upgradeKeys
+      .filter((k) => k !== guaranteedNew)
+      .sort(() => Math.random() - 0.5);
+    [guaranteedNew, ...remainingUpgrades].slice(0, 3).forEach((k) => {
+      const u = upgradeDefs[k],
+        c = document.createElement("div");
+      c.className = "choice";
+      c.innerHTML = `<div class="tag">${u.icon}</div><div class="name">${u.name}</div><div class="desc">${u.desc}</div>`;
+      c.onclick = () => chooseUpgrade(k);
+      upgradeChoices.appendChild(c);
+    });
     upgradeScreen.classList.remove("hidden");
     altarScreen.style.display = "none";
     updateDOM();
@@ -705,6 +727,26 @@
   function showChains() {
     state.mode = "chain";
     upgradeChoices.innerHTML = "";
+    const panel = upgradeScreen.querySelector(".panel");
+    if (panel) {
+      let heading = panel.querySelector("#chainMenuTitle");
+      if (!heading) {
+        heading = document.createElement("h2");
+        heading.id = "chainMenuTitle";
+        heading.style.margin = "0 0 8px";
+        heading.style.color = "#ff4bd8";
+        panel.insertBefore(heading, upgradeChoices);
+      }
+      heading.textContent = "CHAIN ALTAR — CHOOSE 1";
+      let sub = panel.querySelector("#chainMenuHint");
+      if (!sub) {
+        sub = document.createElement("p");
+        sub.id = "chainMenuHint";
+        panel.insertBefore(sub, upgradeChoices);
+      }
+      sub.textContent =
+        "Every 3 completed rounds, choose one permanent chain. Chains make the run harder.";
+    }
     Object.keys(chainDefs)
       .sort(() => Math.random() - 0.5)
       .slice(0, 3)
