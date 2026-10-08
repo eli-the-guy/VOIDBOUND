@@ -684,18 +684,101 @@
     }
     p.cooldown = Math.max(0.35, 2 - state.upgrades.rapid * 0.25);
   }
-  function showUpgrades() {
-    state.mode = "upgrade";
-    upgradeChoices.innerHTML = "";
-    const panel = upgradeScreen.querySelector(".panel");
-    if (panel) {
-      const heading = panel.querySelector("#chainMenuTitle");
-      if (heading) heading.remove();
-      const sub = panel.querySelector("#chainMenuHint");
-      if (sub) sub.remove();
+  function showChoiceMenu(kind, defs, keys) {
+    let menu = document.getElementById("voidboundChoiceMenu");
+    if (!menu) {
+      menu = document.createElement("div");
+      menu.id = "voidboundChoiceMenu";
+      document.body.appendChild(menu);
     }
-    const upgradeKeys = Object.keys(upgradeDefs);
-    const newUpgradeKeys = [
+    menu.innerHTML = "";
+    Object.assign(menu.style, {
+      position: "fixed",
+      inset: "0",
+      zIndex: "999999",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      background: "rgba(4,0,12,.86)",
+      fontFamily: "inherit",
+      pointerEvents: "auto",
+    });
+    const box = document.createElement("div");
+    Object.assign(box.style, {
+      width: "min(900px,92vw)",
+      maxHeight: "86vh",
+      overflowY: "auto",
+      padding: "26px",
+      borderRadius: "22px",
+      textAlign: "center",
+      background: "linear-gradient(145deg,#17052b,#09000f)",
+      border: kind === "chain" ? "2px solid #ff35d0" : "2px solid #9b5cff",
+      boxShadow: kind === "chain" ? "0 0 45px #ff35d055" : "0 0 45px #9b5cff55",
+      color: "white",
+    });
+    const title = document.createElement("h1");
+    title.textContent =
+      kind === "chain" ? "⛓ CHAIN — CHOOSE 1" : "✦ UPGRADE — CHOOSE 1";
+    title.style.margin = "0 0 8px";
+    title.style.color = kind === "chain" ? "#ff4bd8" : "#c77dff";
+    box.appendChild(title);
+    const sub = document.createElement("div");
+    sub.textContent =
+      kind === "chain"
+        ? "A chain permanently makes the run harder."
+        : "Choose one upgrade. New upgrades are included in this pool.";
+    sub.style.marginBottom = "18px";
+    sub.style.opacity = ".85";
+    box.appendChild(sub);
+    const row = document.createElement("div");
+    Object.assign(row.style, {
+      display: "grid",
+      gridTemplateColumns: "repeat(3,1fr)",
+      gap: "14px",
+    });
+    for (const k of keys) {
+      const d = defs[k];
+      const card = document.createElement("button");
+      card.type = "button";
+      Object.assign(card.style, {
+        minHeight: "170px",
+        padding: "18px",
+        borderRadius: "16px",
+        cursor: "pointer",
+        color: "white",
+        background: "#12091f",
+        border: "1px solid #7d39a8",
+        textAlign: "center",
+        fontFamily: "inherit",
+      });
+      card.innerHTML = `<div style="font-size:13px;opacity:.7;margin-bottom:8px">${d.icon || "VOID"}</div><div style="font-size:21px;font-weight:800;margin-bottom:10px">${d.name}</div><div style="font-size:14px;line-height:1.4;opacity:.85">${d.desc}</div>`;
+      card.onmouseenter = () => {
+        card.style.transform = "translateY(-4px)";
+        card.style.borderColor = "#ff4bd8";
+      };
+      card.onmouseleave = () => {
+        card.style.transform = "";
+        card.style.borderColor = "#7d39a8";
+      };
+      card.onclick = () =>
+        kind === "chain" ? chooseChain(k) : chooseUpgrade(k);
+      row.appendChild(card);
+    }
+    box.appendChild(row);
+    menu.appendChild(box);
+    state.mode = kind;
+    altarScreen.style.display = "none";
+    upgradeScreen.classList.add("hidden");
+  }
+
+  function closeChoiceMenu() {
+    const menu = document.getElementById("voidboundChoiceMenu");
+    if (menu) menu.remove();
+  }
+
+  function showUpgrades() {
+    const all = Object.keys(upgradeDefs);
+    const newOnes = [
       "triple",
       "bounce",
       "voidburst",
@@ -707,65 +790,25 @@
       "magnet",
       "shrink",
     ].filter((k) => upgradeDefs[k]);
-    const guaranteedNew =
-      newUpgradeKeys[Math.floor(Math.random() * newUpgradeKeys.length)];
-    const remainingUpgrades = upgradeKeys
-      .filter((k) => k !== guaranteedNew)
+    const guaranteed = newOnes[Math.floor(Math.random() * newOnes.length)];
+    const rest = all
+      .filter((k) => k !== guaranteed)
       .sort(() => Math.random() - 0.5);
-    [guaranteedNew, ...remainingUpgrades].slice(0, 3).forEach((k) => {
-      const u = upgradeDefs[k],
-        c = document.createElement("div");
-      c.className = "choice";
-      c.innerHTML = `<div class="tag">${u.icon}</div><div class="name">${u.name}</div><div class="desc">${u.desc}</div>`;
-      c.onclick = () => chooseUpgrade(k);
-      upgradeChoices.appendChild(c);
-    });
-    upgradeScreen.classList.remove("hidden");
-    altarScreen.style.display = "none";
-    updateDOM();
+    showChoiceMenu("upgrade", upgradeDefs, [guaranteed, ...rest].slice(0, 3));
   }
+
   function showChains() {
-    state.mode = "chain";
-    upgradeChoices.innerHTML = "";
-    const panel = upgradeScreen.querySelector(".panel");
-    if (panel) {
-      let heading = panel.querySelector("#chainMenuTitle");
-      if (!heading) {
-        heading = document.createElement("h2");
-        heading.id = "chainMenuTitle";
-        heading.style.margin = "0 0 8px";
-        heading.style.color = "#ff4bd8";
-        panel.insertBefore(heading, upgradeChoices);
-      }
-      heading.textContent = "CHAIN ALTAR — CHOOSE 1";
-      let sub = panel.querySelector("#chainMenuHint");
-      if (!sub) {
-        sub = document.createElement("p");
-        sub.id = "chainMenuHint";
-        panel.insertBefore(sub, upgradeChoices);
-      }
-      sub.textContent =
-        "Every 3 completed rounds, choose one permanent chain. Chains make the run harder.";
-    }
-    Object.keys(chainDefs)
+    const keys = Object.keys(chainDefs)
       .sort(() => Math.random() - 0.5)
-      .slice(0, 3)
-      .forEach((k) => {
-        const cdef = chainDefs[k],
-          c = document.createElement("div");
-        c.className = "choice";
-        c.innerHTML = `<div class="tag">${cdef.icon}</div><div class="name">${cdef.name}</div><div class="desc">${cdef.desc}</div>`;
-        c.onclick = () => chooseChain(k);
-        upgradeChoices.appendChild(c);
-      });
-    upgradeScreen.classList.remove("hidden");
-    altarScreen.style.display = "none";
-    updateDOM();
+      .slice(0, 3);
+    showChoiceMenu("chain", chainDefs, keys);
   }
+
   function chooseChain(k) {
     if (state.mode !== "chain") return;
     state.chains[k]++;
     state.pendingChain = false;
+    closeChoiceMenu();
     upgradeScreen.classList.add("hidden");
     showMessage("CHAIN: " + chainDefs[k].name);
     if (state.pendingUpgrade) {
@@ -784,6 +827,7 @@
       state.player.jumpMax =
         0.8 + state.upgrades.jump * 0.3 + state.upgrades.phasejump * 0.25;
     state.pendingUpgrade = false;
+    closeChoiceMenu();
     showMessage(upgradeDefs[k].name + " ACQUIRED");
     showAltar();
   }
