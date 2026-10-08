@@ -191,7 +191,7 @@
     },
     rapid: {
       name: "RAPID FIRE",
-      desc: "Reduce your 2-second shuriken cooldown by 0.25 seconds per level.",
+      desc: "Reduce your 0.5-second shuriken cooldown by 0.10 seconds per level.",
       icon: "RPD",
     },
     twin: {
@@ -695,7 +695,7 @@
         pierces: state.upgrades.pierce,
       });
     }
-    p.cooldown = Math.max(0.35, 2 - state.upgrades.rapid * 0.25);
+    p.cooldown = Math.max(0.35, 0.5 - state.upgrades.rapid * 0.1);
   }
   const chainDefs = {
     frenzy: { name: "FRENZY", desc: "Enemies attack 18% faster per stack." },
