@@ -347,6 +347,7 @@
     },
     altarCooldown: 0,
     transitionToken: 0,
+    roundTransition: false,
     roundEnemyIds: [],
     altarQueued: false,
     className: null,
@@ -433,6 +434,10 @@
       cooldown: 0,
       alive: true,
       invincible: 3,
+      dashTime: 0,
+      dashCooldown: 0,
+      dashV: 0,
+      dashAngle: 0,
     };
     updateDOM();
   }
@@ -587,26 +592,36 @@
     if (state.mode !== "altar" || state.altarCooldown > 0) return;
     const chosen = state.altarOptions[i];
     if (!chosen) return;
+
     state.altarCooldown = 0.3;
     state.selectedEnemy = chosen;
-    // A new altar choice starts the next round. Revive every previous enemy,
-    // reset its attack state, then add the newly chosen enemy.
-    reviveAllEnemies();
     state.altarOptions = [null, null];
     altarDoms.forEach((el) => (el.style.display = "none"));
     altarScreen.style.display = "none";
-    state.mode = "play";
-    state.player.invincible = 3;
-    state.bloodrushStacks = 0;
+    closeChoiceOverlay();
+
+    // Every altar choice starts a real combat round. All previously selected
+    // enemies return alive, then the newly selected enemy is added to the stack.
+    reviveAllEnemies();
     spawnEnemy(chosen);
     for (let i = 0; i < state.chains.swarm; i++) spawnEnemy(chosen);
-    state.roundEnemyIds = state.enemies.map((e) => e.id);
+
+    state.roundEnemyIds = state.enemies.filter((e) => e.alive).map((e) => e.id);
     state.enemyShots = [];
     state.shots = [];
+    state.echoQueue = [];
+    state.grapple = null;
+    state.bloodrushStacks = 0;
+    state.player.alive = true;
+    state.player.invincible = 3;
+    state.player.cooldown = 0;
+    state.mode = "play";
+
     updateHud();
     updateDOM();
-    showMessage("CHOSEN: " + enemyDefs[chosen].name);
+    showMessage("CHOSEN: " + enemyDefs[chosen].name + "  •  3s INVINCIBILITY");
   }
+
   function firePlayer() {
     if (state.mode === "class") return;
     if (state.mode === "altar") {
@@ -684,101 +699,132 @@
     }
     p.cooldown = Math.max(0.35, 2 - state.upgrades.rapid * 0.25);
   }
-  function showChoiceMenu(kind, defs, keys) {
-    let menu = document.getElementById("voidboundChoiceMenu");
-    if (!menu) {
-      menu = document.createElement("div");
-      menu.id = "voidboundChoiceMenu";
-      document.body.appendChild(menu);
-    }
-    menu.innerHTML = "";
-    Object.assign(menu.style, {
+  // ===== INTEGRATED CHOICE SYSTEM =====
+  // Chains and upgrades are part of the normal round progression. They do not
+  // depend on the old HTML upgrade panel, so they cannot be hidden by its CSS.
+  function closeChoiceOverlay() {
+    const old = document.getElementById("voidboundChoiceOverlay");
+    if (old) old.remove();
+  }
+
+  function openChoiceOverlay(kind, keys, defs) {
+    closeChoiceOverlay();
+    state.mode = kind;
+
+    const overlay = document.createElement("div");
+    overlay.id = "voidboundChoiceOverlay";
+    Object.assign(overlay.style, {
       position: "fixed",
       inset: "0",
-      zIndex: "999999",
+      zIndex: "2147483647",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      background: "rgba(4,0,12,.86)",
+      padding: "24px",
+      boxSizing: "border-box",
+      background: "rgba(3,0,10,.94)",
+      color: "#fff",
       fontFamily: "inherit",
       pointerEvents: "auto",
     });
-    const box = document.createElement("div");
-    Object.assign(box.style, {
-      width: "min(900px,92vw)",
-      maxHeight: "86vh",
-      overflowY: "auto",
-      padding: "26px",
-      borderRadius: "22px",
-      textAlign: "center",
-      background: "linear-gradient(145deg,#17052b,#09000f)",
+
+    const panel = document.createElement("div");
+    Object.assign(panel.style, {
+      width: "min(980px, 94vw)",
+      maxHeight: "90vh",
+      overflow: "auto",
+      padding: "28px",
+      boxSizing: "border-box",
+      borderRadius: "24px",
+      background: "linear-gradient(145deg,#19052d,#08000f)",
       border: kind === "chain" ? "2px solid #ff35d0" : "2px solid #9b5cff",
-      boxShadow: kind === "chain" ? "0 0 45px #ff35d055" : "0 0 45px #9b5cff55",
-      color: "white",
+      boxShadow: kind === "chain" ? "0 0 60px #ff35d055" : "0 0 60px #9b5cff55",
+      textAlign: "center",
     });
-    const title = document.createElement("h1");
+
+    const title = document.createElement("div");
     title.textContent =
       kind === "chain" ? "⛓ CHAIN — CHOOSE 1" : "✦ UPGRADE — CHOOSE 1";
-    title.style.margin = "0 0 8px";
-    title.style.color = kind === "chain" ? "#ff4bd8" : "#c77dff";
-    box.appendChild(title);
-    const sub = document.createElement("div");
-    sub.textContent =
+    Object.assign(title.style, {
+      fontSize: "clamp(26px,4vw,42px)",
+      fontWeight: "900",
+      letterSpacing: "2px",
+      marginBottom: "8px",
+      color: kind === "chain" ? "#ff4bd8" : "#c77dff",
+      textShadow: kind === "chain" ? "0 0 22px #ff35d0" : "0 0 22px #9b5cff",
+    });
+    panel.appendChild(title);
+
+    const subtitle = document.createElement("div");
+    subtitle.textContent =
       kind === "chain"
         ? "A chain permanently makes the run harder."
-        : "Choose one upgrade. New upgrades are included in this pool.";
-    sub.style.marginBottom = "18px";
-    sub.style.opacity = ".85";
-    box.appendChild(sub);
-    const row = document.createElement("div");
-    Object.assign(row.style, {
-      display: "grid",
-      gridTemplateColumns: "repeat(3,1fr)",
-      gap: "14px",
+        : "Choose one upgrade. The new upgrade pool is active now.";
+    Object.assign(subtitle.style, {
+      opacity: ".8",
+      fontSize: "15px",
+      marginBottom: "22px",
     });
-    for (const k of keys) {
-      const d = defs[k];
+    panel.appendChild(subtitle);
+
+    const cards = document.createElement("div");
+    Object.assign(cards.style, {
+      display: "grid",
+      gridTemplateColumns: "repeat(3,minmax(0,1fr))",
+      gap: "16px",
+    });
+
+    for (const key of keys) {
+      const def = defs[key];
+      if (!def) continue;
       const card = document.createElement("button");
       card.type = "button";
+      card.innerHTML = `<div style="font-size:12px;opacity:.7;letter-spacing:2px;margin-bottom:10px">${def.icon || "VOID"}</div><div style="font-size:21px;font-weight:900;margin-bottom:10px">${def.name}</div><div style="font-size:14px;line-height:1.45;opacity:.86">${def.desc}</div>`;
       Object.assign(card.style, {
-        minHeight: "170px",
-        padding: "18px",
-        borderRadius: "16px",
+        minHeight: "190px",
+        padding: "20px",
+        borderRadius: "18px",
         cursor: "pointer",
-        color: "white",
-        background: "#12091f",
-        border: "1px solid #7d39a8",
-        textAlign: "center",
+        color: "#fff",
+        background: "linear-gradient(145deg,#160b25,#0c0614)",
+        border: "1px solid #713b91",
         fontFamily: "inherit",
+        textAlign: "center",
+        transition:
+          "transform .12s ease,border-color .12s ease,box-shadow .12s ease",
       });
-      card.innerHTML = `<div style="font-size:13px;opacity:.7;margin-bottom:8px">${d.icon || "VOID"}</div><div style="font-size:21px;font-weight:800;margin-bottom:10px">${d.name}</div><div style="font-size:14px;line-height:1.4;opacity:.85">${d.desc}</div>`;
-      card.onmouseenter = () => {
-        card.style.transform = "translateY(-4px)";
-        card.style.borderColor = "#ff4bd8";
-      };
-      card.onmouseleave = () => {
+      card.addEventListener("mouseenter", () => {
+        card.style.transform = "translateY(-5px)";
+        card.style.borderColor = kind === "chain" ? "#ff4bd8" : "#b477ff";
+        card.style.boxShadow =
+          kind === "chain" ? "0 0 24px #ff35d044" : "0 0 24px #9b5cff44";
+      });
+      card.addEventListener("mouseleave", () => {
         card.style.transform = "";
-        card.style.borderColor = "#7d39a8";
-      };
-      card.onclick = () =>
-        kind === "chain" ? chooseChain(k) : chooseUpgrade(k);
-      row.appendChild(card);
+        card.style.borderColor = "#713b91";
+        card.style.boxShadow = "none";
+      });
+      card.addEventListener("click", () => {
+        if (kind === "chain") chooseChain(key);
+        else chooseUpgrade(key);
+      });
+      cards.appendChild(card);
     }
-    box.appendChild(row);
-    menu.appendChild(box);
-    state.mode = kind;
-    altarScreen.style.display = "none";
-    upgradeScreen.classList.add("hidden");
-  }
 
-  function closeChoiceMenu() {
-    const menu = document.getElementById("voidboundChoiceMenu");
-    if (menu) menu.remove();
+    panel.appendChild(cards);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    altarScreen.style.display = "none";
+    classScreen.classList.add("hidden");
+    upgradeScreen.classList.add("hidden");
+    gameOverScreen.classList.add("hidden");
+    updateDOM();
   }
 
   function showUpgrades() {
-    const all = Object.keys(upgradeDefs);
-    const newOnes = [
+    // One of the ten new upgrades is guaranteed to appear every upgrade event.
+    const newUpgradeKeys = [
       "triple",
       "bounce",
       "voidburst",
@@ -790,47 +836,47 @@
       "magnet",
       "shrink",
     ].filter((k) => upgradeDefs[k]);
-    const guaranteed = newOnes[Math.floor(Math.random() * newOnes.length)];
-    const rest = all
-      .filter((k) => k !== guaranteed)
-      .sort(() => Math.random() - 0.5);
-    showChoiceMenu("upgrade", upgradeDefs, [guaranteed, ...rest].slice(0, 3));
+
+    const guaranteed =
+      newUpgradeKeys[Math.floor(Math.random() * newUpgradeKeys.length)];
+    const pool = Object.keys(upgradeDefs).filter((k) => k !== guaranteed);
+    pool.sort(() => Math.random() - 0.5);
+    const choices = [guaranteed, ...pool].slice(0, 3);
+    openChoiceOverlay("upgrade", choices, upgradeDefs);
   }
 
   function showChains() {
     const keys = Object.keys(chainDefs)
       .sort(() => Math.random() - 0.5)
       .slice(0, 3);
-    showChoiceMenu("chain", chainDefs, keys);
+    openChoiceOverlay("chain", keys, chainDefs);
   }
 
   function chooseChain(k) {
-    if (state.mode !== "chain") return;
-    state.chains[k]++;
+    if (state.mode !== "chain" || !chainDefs[k]) return;
+    state.chains[k] = (state.chains[k] || 0) + 1;
     state.pendingChain = false;
-    closeChoiceMenu();
-    upgradeScreen.classList.add("hidden");
+    closeChoiceOverlay();
     showMessage("CHAIN: " + chainDefs[k].name);
-    if (state.pendingUpgrade) {
-      showUpgrades();
-      return;
-    }
-    showAltar();
+    if (state.pendingUpgrade) showUpgrades();
+    else showAltar();
   }
+
   function chooseUpgrade(k) {
-    if (state.mode !== "upgrade") return;
-    state.upgrades[k]++;
+    if (state.mode !== "upgrade" || !upgradeDefs[k]) return;
+    state.upgrades[k] = (state.upgrades[k] || 0) + 1;
     if (k === "classcore") state.classCore = state.upgrades.classcore;
-    upgradeScreen.classList.add("hidden");
     if (k === "weaken") state.weaken = state.selectedEnemy;
-    if (k === "jump" || k === "phasejump")
+    if (k === "jump" || k === "phasejump") {
       state.player.jumpMax =
         0.8 + state.upgrades.jump * 0.3 + state.upgrades.phasejump * 0.25;
+    }
     state.pendingUpgrade = false;
-    closeChoiceMenu();
+    closeChoiceOverlay();
     showMessage(upgradeDefs[k].name + " ACQUIRED");
     showAltar();
   }
+
   function startGame() {
     startScreen.classList.add("hidden");
     state.level = 1;
@@ -881,6 +927,9 @@
     state.voidTrail = [];
     state.pendingChain = false;
     state.pendingUpgrade = false;
+    state.roundTransition = false;
+    state.transitionToken++;
+    closeChoiceOverlay();
     state.className = null;
     state.classCore = 0;
     state.grapple = null;
@@ -1804,27 +1853,37 @@
     updateDOM();
   }
   function roundEnemiesDefeated() {
-    if (!state.roundEnemyIds.length) return false;
-    return state.roundEnemyIds.every((id) => {
+    if (state.mode !== "play" || !state.roundEnemyIds.length) return false;
+    for (const id of state.roundEnemyIds) {
       const e = state.enemies.find((x) => x.id === id);
-      return !e || !e.alive;
-    });
+      if (e && e.alive) return false;
+    }
+    return true;
   }
   function completeLevel() {
-    // Only the enemies introduced for this round must be defeated. Other living enemies are carried forward.
-    updateHud();
+    if (state.mode !== "play" || state.roundTransition) return;
+    state.roundTransition = true;
     state.mode = "between";
+    state.transitionToken++;
+    const token = state.transitionToken;
+    const completedRound = state.round;
+
     showMessage("ALL ENEMIES DEFEATED");
-    const token = ++state.transitionToken;
+    state.enemyShots = [];
+    state.shots = [];
+    state.echoQueue = [];
+
+    // Progression is based on the round that was just completed.
+    // Chain: every 3 rounds. Upgrade: every 5 rounds. If both happen,
+    // Chain is chosen first, then Upgrade, then the physical altars.
+    state.level = completedRound + 1;
+    state.round = completedRound + 1;
+    state.pendingChain = completedRound % 3 === 0;
+    state.pendingUpgrade = completedRound % 5 === 0;
+
     setTimeout(() => {
       if (token !== state.transitionToken || state.mode !== "between") return;
-      const completedRound = state.round;
-      state.level++;
-      state.round = state.level;
-
-      state.pendingChain = completedRound % 3 === 0;
-      state.pendingUpgrade = completedRound % 5 === 0;
-
+      state.roundTransition = false;
       if (state.pendingChain) {
         showChains();
       } else if (state.pendingUpgrade) {
@@ -1832,8 +1891,11 @@
       } else {
         showAltar();
       }
-    }, 650);
+      updateHud();
+      updateDOM();
+    }, 500);
   }
+
   function particle(x, y, c, life) {
     state.particles.push({
       x,
