@@ -174,102 +174,107 @@
       desc: "Your shuriken stays in the arena longer before disappearing.",
       icon: "RNG",
     },
-    shrink: {
-      name: "SHRINK",
-      desc: "Slightly shrinks the player, enemies, and bullets, making the arena feel bigger.",
-      icon: "SHR",
-    },
     triple: {
       name: "TRIPLE SHURIKEN",
-      desc: "Each shot fires three shuriken in a tight spread.",
+      desc: "Fire three shuriken in a tight spread instead of one.",
       icon: "TRI",
     },
-    ricochet: {
-      name: "RICOCHET",
+    bounce: {
+      name: "VOID BOUNCE",
       desc: "Your shuriken can bounce off the arena walls before disappearing.",
-      icon: "RCH",
+      icon: "BNC",
     },
-    bulletTime: {
-      name: "BULLET TIME",
-      desc: "Enemy bullets move slower, giving you more room to dodge.",
-      icon: "TIM",
+    freeze: {
+      name: "VOID BURST",
+      desc: "Destroying an enemy releases a small four-shot burst of shuriken.",
+      icon: "BST",
     },
-    overclock: {
-      name: "OVERCLOCK",
-      desc: "Boosts your firing cycle and projectile speed together.",
-      icon: "OVR",
+    orbit: {
+      name: "VOID ORBIT",
+      desc: "Creates orbiting blades around you that destroy enemies they touch.",
+      icon: "ORB",
     },
-    megashot: {
-      name: "MEGASHOT",
-      desc: "Your shuriken gets substantially larger without changing its speed.",
-      icon: "MEG",
+    echo: {
+      name: "SHOT ECHO",
+      desc: "Every shuriken creates a delayed echo shot that follows its path.",
+      icon: "ECHO",
+    },
+    time: {
+      name: "TIME FRACTURE",
+      desc: "Enemies move slightly slower while your shuriken is active.",
+      icon: "TIME",
     },
     phasejump: {
       name: "PHASE JUMP",
-      desc: "Jump lasts longer and gives you a stronger escape window.",
+      desc: "Jumping lasts longer and makes your jump state more forgiving.",
       icon: "PHJ",
     },
-    seeker: {
-      name: "SEEKER",
-      desc: "Your shuriken homes toward enemies more aggressively.",
-      icon: "SEK",
+    voidtrail: {
+      name: "VOID TRAIL",
+      desc: "Moving leaves short-lived void sparks that destroy enemies touching them.",
+      icon: "TRL",
     },
-    scatter: {
-      name: "SCATTER",
-      desc: "Your shuriken periodically releases two smaller side shots while flying.",
-      icon: "SCT",
+    magnet: {
+      name: "SHURIKEN MAGNET",
+      desc: "Your shuriken curves more aggressively toward nearby enemies.",
+      icon: "MAG",
+    },
+    shrink: {
+      name: "SHRINK",
+      desc: "Shrinks you, enemies, and bullets slightly, making the arena feel larger.",
+      icon: "SMOL",
     },
   };
   const chainDefs = {
     frenzy: {
-      name: "FRENZY",
-      desc: "Enemies act faster. Their movement and attack processing are accelerated.",
-      icon: "FZY",
+      name: "ENEMY FRENZY",
+      desc: "Enemies move 15% faster.",
+      icon: "FRZ",
     },
-    hotshot: {
-      name: "HOTSHOT",
-      desc: "Enemy bullets travel faster and become harder to outrun.",
-      icon: "HOT",
+    overclock: {
+      name: "OVERCLOCK",
+      desc: "Enemy attacks recharge 18% faster.",
+      icon: "CLK",
+    },
+    bulletstorm: {
+      name: "BULLETSTORM",
+      desc: "Enemy bullets travel 22% faster and are slightly larger.",
+      icon: "STM",
     },
     swarm: {
       name: "SWARM",
-      desc: "Each new round adds one extra enemy to the stack.",
+      desc: "Each round spawns one additional enemy.",
       icon: "SWM",
     },
-    giant: {
-      name: "GIANTS",
-      desc: "All enemies become larger and their collision zones grow with them.",
-      icon: "GNT",
+    closecall: {
+      name: "CLOSE CALL",
+      desc: "Enemies begin each round closer to you.",
+      icon: "CLS",
     },
-    barrage: {
-      name: "BARRAGE",
-      desc: "Enemy projectiles become larger, leaving less room between hazards.",
-      icon: "BRG",
+    heavy: {
+      name: "HEAVY VOID",
+      desc: "Your movement speed is reduced by 12%.",
+      icon: "HVY",
     },
-    drag: {
-      name: "DRAG",
-      desc: "Your movement speed is reduced, making positioning more important.",
-      icon: "DRG",
-    },
-    heavygravity: {
-      name: "HEAVY GRAVITY",
-      desc: "Your jumps are shorter, reducing your safe time above hazards.",
-      icon: "GRV",
-    },
-    jammed: {
-      name: "JAMMED",
-      desc: "Your shuriken firing cycle becomes slower.",
-      icon: "JAM",
+    fragile: {
+      name: "FRAGILE REALITY",
+      desc: "Your jump lasts 20% less time.",
+      icon: "FRG",
     },
     relentless: {
       name: "RELENTLESS",
-      desc: "Enemies recover from their attacks faster and spend less time waiting.",
+      desc: "Living enemies recover from their attack cycles faster.",
       icon: "RLS",
     },
-    pressure: {
-      name: "PRESSURE",
-      desc: "Every enemy added from now on receives a small speed boost.",
-      icon: "PRS",
+    bloodrush: {
+      name: "BLOOD RUSH",
+      desc: "Enemies become 10% faster every time another enemy is defeated in the round.",
+      icon: "RSH",
+    },
+    blackhole: {
+      name: "BLACK HOLE",
+      desc: "Enemy projectiles last 25% longer before leaving the arena.",
+      icon: "BLK",
     },
   };
   let W = 0,
@@ -300,29 +305,32 @@
       pierce: 0,
       homing: 0,
       range: 0,
-      shrink: 0,
       triple: 0,
-      ricochet: 0,
-      bulletTime: 0,
-      overclock: 0,
-      megashot: 0,
+      bounce: 0,
+      freeze: 0,
+      orbit: 0,
+      echo: 0,
+      time: 0,
       phasejump: 0,
-      seeker: 0,
-      scatter: 0,
+      voidtrail: 0,
+      magnet: 0,
+      shrink: 0,
     },
     chains: {
       frenzy: 0,
-      hotshot: 0,
+      overclock: 0,
+      bulletstorm: 0,
       swarm: 0,
-      giant: 0,
-      barrage: 0,
-      drag: 0,
-      heavygravity: 0,
-      jammed: 0,
+      closecall: 0,
+      heavy: 0,
+      fragile: 0,
       relentless: 0,
-      pressure: 0,
+      bloodrush: 0,
+      blackhole: 0,
     },
-    pendingChain: false,
+    bloodrushStacks: 0,
+    orbitBlades: [],
+    voidTrail: [],
     weaken: null,
     player: {
       x: 0,
@@ -384,8 +392,8 @@
     playerDom.style.left = state.player.x + "px";
     playerDom.style.top = state.player.y + "px";
     playerDom.style.display = state.mode === "start" ? "none" : "block";
-    const shrinkScale = Math.pow(0.92, state.upgrades.shrink);
-    playerDom.style.transform = `translate(-50%,-50%) scale(${shrinkScale * (state.player.jump > 0 ? 1.18 : 1)})`;
+    const visualScale = Math.pow(0.9, state.upgrades.shrink || 0);
+    playerDom.style.transform = `translate(-50%,-50%) scale(${visualScale * (state.player.jump > 0 ? 1.18 : 1)})`;
     document.querySelector(".player-direction").style.transform =
       `rotate(${state.player.angle}rad)`;
     for (let i = 0; i < 2; i++)
@@ -417,16 +425,13 @@
       r: 14,
       angle: 0,
       jump: 0,
-      jumpMax: Math.max(
-        0.25,
-        0.8 +
-          state.upgrades.jump * 0.3 +
-          state.upgrades.phasejump * 0.25 -
-          state.chains.heavygravity * 0.12,
-      ),
+      jumpMax:
+        (0.8 + state.upgrades.jump * 0.3) *
+        (1 + state.upgrades.phasejump * 0.18) *
+        (1 - state.chains.fragile * 0.2),
       cooldown: 0,
-      invincible: 3,
       alive: true,
+      invincible: 3,
     };
     updateDOM();
   }
@@ -651,10 +656,17 @@
     if (state.player.cooldown > 0) return;
     const p = state.player,
       a = p.angle,
-      speed = 500 + state.upgrades.bullet * 80 + state.upgrades.overclock * 45;
-    let offsets = [0];
-    if (state.upgrades.triple) offsets = [-0.13, 0, 0.13];
-    else if (state.upgrades.twin) offsets = [-0.09, 0.09];
+      speed = 500 + state.upgrades.bullet * 80;
+    const spread = state.upgrades.triple
+      ? 0.12
+      : state.upgrades.twin
+        ? 0.09
+        : 0;
+    const offsets = state.upgrades.triple
+      ? [-spread, 0, spread]
+      : state.upgrades.twin
+        ? [-spread, spread]
+        : [0];
     for (const off of offsets) {
       const aa = a + off;
       state.shots.push({
@@ -662,37 +674,18 @@
         y: p.y + Math.sin(aa) * 18,
         vx: Math.cos(aa) * speed,
         vy: Math.sin(aa) * speed,
-        r: 5 + state.upgrades.size * 2 + state.upgrades.megashot * 3,
+        r: 5 + state.upgrades.size * 2,
         life: 2 + state.upgrades.range * 0.6,
         pierces: state.upgrades.pierce,
-        bounces: state.upgrades.ricochet,
-        scatterTimer: state.upgrades.scatter ? 0.35 : -1,
-        scatterLevel: state.upgrades.scatter,
+        bounces: state.upgrades.bounce,
+        echo: state.upgrades.echo > 0,
       });
     }
-    p.cooldown = Math.max(
-      0.25,
-      2 -
-        state.upgrades.rapid * 0.25 -
-        state.upgrades.overclock * 0.12 +
-        state.chains.jammed * 0.25,
-    );
-  }
-  function setUpgradeScreenHeader(title, hint) {
-    const heading = upgradeScreen.querySelector(
-      "h2, h3, .title, .screen-title",
-    );
-    if (heading) heading.textContent = title;
-    const hintEl = upgradeScreen.querySelector("p");
-    if (hintEl) hintEl.textContent = hint;
+    p.cooldown = Math.max(0.35, 2 - state.upgrades.rapid * 0.25);
   }
   function showUpgrades() {
     state.mode = "upgrade";
     upgradeChoices.innerHTML = "";
-    setUpgradeScreenHeader(
-      "CHOOSE AN UPGRADE",
-      "Choose one permanent upgrade.",
-    );
     Object.keys(upgradeDefs)
       .sort(() => Math.random() - 0.5)
       .slice(0, 3)
@@ -708,21 +701,32 @@
     altarScreen.style.display = "none";
     updateDOM();
   }
-  function showChain() {
+  function chooseUpgrade(k) {
+    state.upgrades[k]++;
+    if (k === "classcore") state.classCore = state.upgrades.classcore;
+    if (k === "weaken") state.weaken = state.selectedEnemy;
+    if (k === "jump" || k === "phasejump")
+      state.player.jumpMax =
+        (0.8 + state.upgrades.jump * 0.3) *
+        (1 + state.upgrades.phasejump * 0.18) *
+        (1 - state.chains.fragile * 0.2);
+    upgradeScreen.classList.add("hidden");
+    state.level++;
+    state.round++;
+    showMessage(upgradeDefs[k].name + " ACQUIRED");
+    startLevel();
+  }
+  function showChains() {
     state.mode = "chain";
     upgradeChoices.innerHTML = "";
-    setUpgradeScreenHeader(
-      "CHOOSE A CHAIN",
-      "Chains make survival harder or empower the enemies. The effect is permanent.",
-    );
     Object.keys(chainDefs)
       .sort(() => Math.random() - 0.5)
       .slice(0, 3)
       .forEach((k) => {
-        const u = chainDefs[k],
+        const cdef = chainDefs[k],
           c = document.createElement("div");
         c.className = "choice";
-        c.innerHTML = `<div class="tag">CHAIN ${u.icon}</div><div class="name">${u.name}</div><div class="desc">${u.desc}</div>`;
+        c.innerHTML = `<div class="tag">${cdef.icon}</div><div class="name">${cdef.name}</div><div class="desc">${cdef.desc}</div>`;
         c.onclick = () => chooseChain(k);
         upgradeChoices.appendChild(c);
       });
@@ -730,41 +734,11 @@
     altarScreen.style.display = "none";
     updateDOM();
   }
-  function chooseUpgrade(k) {
-    state.upgrades[k]++;
-    if (k === "classcore") state.classCore = state.upgrades.classcore;
-    upgradeScreen.classList.add("hidden");
-    if (k === "weaken") state.weaken = state.selectedEnemy;
-    if (k === "jump" || k === "phasejump")
-      state.player.jumpMax = Math.max(
-        0.25,
-        0.8 +
-          state.upgrades.jump * 0.3 +
-          state.upgrades.phasejump * 0.25 -
-          state.chains.heavygravity * 0.12,
-      );
-    state.level++;
-    state.round++;
-    showMessage(upgradeDefs[k].name + " ACQUIRED");
-    if (state.pendingChain) {
-      state.pendingChain = false;
-      showChain();
-    } else {
-      startLevel();
-    }
-  }
   function chooseChain(k) {
     state.chains[k]++;
+    state.mode = "play";
     upgradeScreen.classList.add("hidden");
-    showMessage("CHAIN " + chainDefs[k].name + " ACCEPTED");
-    if (k === "heavygravity")
-      state.player.jumpMax = Math.max(
-        0.25,
-        0.8 +
-          state.upgrades.jump * 0.3 +
-          state.upgrades.phasejump * 0.25 -
-          state.chains.heavygravity * 0.12,
-      );
+    showMessage("CHAIN: " + chainDefs[k].name);
     startLevel();
   }
   function startGame() {
@@ -787,29 +761,32 @@
       pierce: 0,
       homing: 0,
       range: 0,
-      shrink: 0,
       triple: 0,
-      ricochet: 0,
-      bulletTime: 0,
-      overclock: 0,
-      megashot: 0,
+      bounce: 0,
+      freeze: 0,
+      orbit: 0,
+      echo: 0,
+      time: 0,
       phasejump: 0,
-      seeker: 0,
-      scatter: 0,
+      voidtrail: 0,
+      magnet: 0,
+      shrink: 0,
     };
     state.chains = {
       frenzy: 0,
-      hotshot: 0,
+      overclock: 0,
+      bulletstorm: 0,
       swarm: 0,
-      giant: 0,
-      barrage: 0,
-      drag: 0,
-      heavygravity: 0,
-      jammed: 0,
+      closecall: 0,
+      heavy: 0,
+      fragile: 0,
       relentless: 0,
-      pressure: 0,
+      bloodrush: 0,
+      blackhole: 0,
     };
-    state.pendingChain = false;
+    state.bloodrushStacks = 0;
+    state.orbitBlades = [];
+    state.voidTrail = [];
     state.weaken = null;
     state.className = null;
     state.classCore = 0;
@@ -827,7 +804,7 @@
   document.getElementById("startBtn").onclick = startGame;
   document.getElementById("restartBtn").onclick = () => location.reload();
   function startLevel() {
-    if (state.level > 1 && state.level % 5 === 0) {
+    if (state.level > 1 && state.level % 5 === 0 && state.mode !== "chain") {
       showUpgrades();
       return;
     }
@@ -852,7 +829,10 @@
     do {
       x = rnd(arena.x + pad, arena.x + arena.w - pad);
       y = rnd(arena.y + pad, arena.y + arena.h - pad);
-    } while (Math.hypot(x - state.player.x, y - state.player.y) < 180);
+    } while (
+      Math.hypot(x - state.player.x, y - state.player.y) <
+      (state.chains.closecall ? 115 : 180)
+    );
     if (type === "repeater") {
       const backAngle = state.player.angle + Math.PI;
       x = clamp(
@@ -872,7 +852,8 @@
       type,
       x,
       y,
-      r: 18 * (1 + state.chains.giant * 0.1),
+      r: 18,
+      slowTimer: 0,
       angle: rnd(-Math.PI, Math.PI),
       attack: attackDelay(2),
       shotAngle: rnd(-Math.PI, Math.PI),
@@ -925,7 +906,13 @@
     });
   }
   function attackDelay(base) {
-    return Math.max(0.2, base + rnd(-2, 2));
+    const mult =
+      1 -
+      Math.min(
+        0.55,
+        state.chains.overclock * 0.18 + state.chains.relentless * 0.1,
+      );
+    return Math.max(0.2, base * mult + rnd(-2, 2));
   }
   function enemySpeed(e) {
     const b =
@@ -952,9 +939,12 @@
         voidhunter: 50,
       }[e.type] || 60;
     let mult = 1;
-    if (state.weaken === e.type) mult *= 0.62;
-    mult *= 1 + state.chains.pressure * 0.08;
-    return b * mult;
+    mult *= 1 + state.chains.frenzy * 0.15;
+    mult *= 1 + state.bloodrushStacks * state.chains.bloodrush * 0.1;
+    if (e.slowTimer > 0) mult *= 0.55;
+    if (state.upgrades.time > 0 && state.shots.length > 0)
+      mult *= Math.max(0.55, 1 - state.upgrades.time * 0.08);
+    return (state.weaken === e.type ? b * 0.62 : b) * mult;
   }
   function tryJump() {
     if (state.player.jump <= 0) state.player.jump = state.player.jumpMax;
@@ -963,18 +953,10 @@
     state.enemyShots.push({
       x: x + Math.cos(a) * 22,
       y: y + Math.sin(a) * 22,
-      vx:
-        Math.cos(a) *
-        speed *
-        (1 + state.chains.hotshot * 0.12) *
-        Math.max(0.35, 1 - state.upgrades.bulletTime * 0.1),
-      vy:
-        Math.sin(a) *
-        speed *
-        (1 + state.chains.hotshot * 0.12) *
-        Math.max(0.35, 1 - state.upgrades.bulletTime * 0.1),
-      r: 7 * (1 + state.chains.barrage * 0.1),
-      life: 8,
+      vx: Math.cos(a) * speed * (1 + state.chains.bulletstorm * 0.22),
+      vy: Math.sin(a) * speed * (1 + state.chains.bulletstorm * 0.22),
+      r: 7 * (1 + state.chains.bulletstorm * 0.06),
+      life: 8 * (1 + state.chains.blackhole * 0.25),
     });
   }
   function startDash() {
@@ -1006,7 +988,6 @@
   function hurtPlayer(source) {
     const p = state.player,
       g = state.ghost;
-    if (p.invincible > 0) return false;
     if (g && g.active && g.hits > 0) {
       g.hits--;
       showMessage("GHOST HIT ABSORBED");
@@ -1026,10 +1007,8 @@
       updateDOM();
       return;
     }
-    if (state.player.invincible > 0) {
-      state.player.invincible = Math.max(0, state.player.invincible - dt);
-    }
     const p = state.player;
+    if (p.invincible > 0) p.invincible = Math.max(0, p.invincible - dt);
     p.cooldown = Math.max(0, p.cooldown - dt);
     if (p.jump > 0) p.jump = Math.max(0, p.jump - dt);
     p.angle = angleTo(p, mouse);
@@ -1039,9 +1018,8 @@
       my =
         (keys.s || keys.arrowdown ? 1 : 0) - (keys.w || keys.arrowup ? 1 : 0),
       len = Math.hypot(mx, my) || 1;
-    let sp =
-      (245 + state.upgrades.speed * 35) *
-      Math.max(0.35, 1 - state.chains.drag * 0.1);
+    let sp = 245 + state.upgrades.speed * 35;
+    if (state.chains.heavy) sp *= Math.max(0.45, 1 - state.chains.heavy * 0.12);
     if (state.ghost.active) sp *= 0.62 + Math.min(0.25, state.classCore * 0.04);
     if (state.player.dashTime > 0) {
       state.player.dashTime -= dt;
@@ -1072,33 +1050,34 @@
     }
     p.x = clamp(p.x, arena.x + 15, arena.x + arena.w - 15);
     p.y = clamp(p.y, arena.y + 15, arena.y + arena.h - 15);
+    if (state.upgrades.voidtrail) {
+      state.voidTrail.push({
+        x: p.x,
+        y: p.y,
+        life: 0.9 + state.upgrades.voidtrail * 0.18,
+      });
+      if (state.voidTrail.length > 90) state.voidTrail.shift();
+    }
+    for (const t of state.voidTrail) t.life -= dt;
+    state.voidTrail = state.voidTrail.filter((t) => t.life > 0);
+    if (state.upgrades.orbit) {
+      state.orbitBlades.length = state.upgrades.orbit;
+      for (let i = 0; i < state.orbitBlades.length; i++) {
+        const aa =
+          performance.now() * 0.001 * (1.4 + i * 0.08) +
+          (i * TAU) / state.orbitBlades.length;
+        state.orbitBlades[i] = {
+          x: p.x + Math.cos(aa) * 38,
+          y: p.y + Math.sin(aa) * 38,
+          r: 7,
+        };
+      }
+    } else state.orbitBlades.length = 0;
     if (state.ghost.cooldown > 0)
       state.ghost.cooldown = Math.max(0, state.ghost.cooldown - dt);
     if (mouse.down) firePlayer();
     for (const s of state.shots) {
-      if (s.scatterTimer >= 0) {
-        s.scatterTimer -= dt;
-        if (s.scatterTimer <= 0 && s.scatterLevel > 0) {
-          const base = Math.atan2(s.vy, s.vx);
-          for (const off of [-0.42, 0.42]) {
-            state.shots.push({
-              x: s.x,
-              y: s.y,
-              vx: Math.cos(base + off) * 390,
-              vy: Math.sin(base + off) * 390,
-              r: Math.max(3, s.r * 0.65),
-              life: 1.1,
-              pierces: 0,
-              bounces: 0,
-              scatterTimer: -1,
-              scatterLevel: 0,
-            });
-          }
-          s.scatterTimer = -1;
-          s.scatterLevel = 0;
-        }
-      }
-      if (state.upgrades.homing || state.upgrades.seeker) {
+      if (state.upgrades.homing) {
         let target = null,
           best = Infinity;
         for (const e of state.enemies)
@@ -1113,9 +1092,9 @@
           const ta = angleTo(s, target),
             ca = Math.atan2(s.vy, s.vx),
             turn = Math.max(
-              -(2.2 + state.upgrades.seeker * 1.8) * dt,
+              -2.2 * dt,
               Math.min(
-                (2.2 + state.upgrades.seeker * 1.8) * dt,
+                2.2 * dt,
                 Math.atan2(Math.sin(ta - ca), Math.cos(ta - ca)),
               ),
             );
@@ -1128,18 +1107,20 @@
       s.x += s.vx * dt;
       s.y += s.vy * dt;
       if (s.bounces > 0) {
-        let bounced = false;
-        if (s.x <= arena.x || s.x >= arena.x + arena.w) {
+        if (
+          (s.x <= arena.x + 2 && s.vx < 0) ||
+          (s.x >= arena.x + arena.w - 2 && s.vx > 0)
+        ) {
           s.vx *= -1;
-          s.x = clamp(s.x, arena.x, arena.x + arena.w);
-          bounced = true;
+          s.bounces--;
         }
-        if (s.y <= arena.y || s.y >= arena.y + arena.h) {
+        if (
+          (s.y <= arena.y + 2 && s.vy < 0) ||
+          (s.y >= arena.y + arena.h - 2 && s.vy > 0)
+        ) {
           s.vy *= -1;
-          s.y = clamp(s.y, arena.y, arena.y + arena.h);
-          bounced = true;
+          s.bounces--;
         }
-        if (bounced) s.bounces--;
       }
       s.life -= dt;
     }
@@ -1187,9 +1168,27 @@
         p.y += Math.sin(a) * pull * dt;
       }
     }
-    const enemyDt =
-      dt * (1 + state.chains.frenzy * 0.12 + state.chains.relentless * 0.08);
-    for (const e of state.enemies) if (e.alive) updateEnemy(e, enemyDt);
+    for (const e of state.enemies) {
+      if (!e.alive) continue;
+      for (const b of state.orbitBlades)
+        if (dist(e, b) < e.r + b.r) {
+          e.alive = false;
+          for (let k = 0; k < 10; k++)
+            particle(e.x, e.y, enemyDefs[e.type].color, 0.45);
+          if (state.chains.bloodrush) state.bloodrushStacks++;
+          break;
+        }
+      if (!e.alive) continue;
+      for (const t of state.voidTrail)
+        if (dist(e, t) < e.r + 10) {
+          e.alive = false;
+          for (let k = 0; k < 10; k++)
+            particle(e.x, e.y, enemyDefs[e.type].color, 0.45);
+          if (state.chains.bloodrush) state.bloodrushStacks++;
+          break;
+        }
+    }
+    for (const e of state.enemies) if (e.alive) updateEnemy(e, dt);
     for (const b of state.enemyShots) {
       if (b.orbit && b.orbitEnemy && b.orbitEnemy.alive) {
         b.orbitAngle += b.orbitSpeed * dt;
@@ -1226,7 +1225,25 @@
         if (circleHit(e, state.shots[j])) {
           for (let k = 0; k < 10; k++)
             particle(e.x, e.y, enemyDefs[e.type].color, 0.45);
+          if (state.upgrades.freeze) {
+            for (let k = 0; k < 4; k++) {
+              const ba = (k * TAU) / 4;
+              state.shots.push({
+                x: e.x,
+                y: e.y,
+                vx: Math.cos(ba) * 260,
+                vy: Math.sin(ba) * 260,
+                r: 4 * Math.pow(0.9, state.upgrades.shrink || 0),
+                life: 1.5,
+                pierces: 0,
+                bounces: 0,
+                echo: false,
+                delay: 0,
+              });
+            }
+          }
           e.alive = false;
+          if (state.chains.bloodrush) state.bloodrushStacks++;
           if (state.shots[j].pierces > 0) state.shots[j].pierces--;
           else state.shots.splice(j, 1);
           break;
@@ -1700,9 +1717,8 @@
       if (token !== state.transitionToken || state.mode !== "between") return;
       state.level++;
       state.round = state.level;
-      state.pendingChain = state.level % 3 === 0;
-      if (state.level % 5 === 0) showUpgrades();
-      else if (state.pendingChain) showChain();
+      if (state.level % 3 === 0) showChains();
+      else if (state.level % 5 === 0) showUpgrades();
       else showAltar();
     }, 650);
   }
@@ -1790,6 +1806,28 @@
     ctx.restore();
   }
   function drawWorld() {
+    const vs = Math.pow(0.9, state.upgrades.shrink || 0);
+    for (const t of state.voidTrail) {
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, t.life);
+      ctx.fillStyle = "#8d4dff";
+      ctx.shadowColor = "#8d4dff";
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, 7 * vs, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+    }
+    for (const b of state.orbitBlades) {
+      ctx.save();
+      ctx.fillStyle = "#ffffff";
+      ctx.shadowColor = "#ff2bd6";
+      ctx.shadowBlur = 16;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r * vs, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+    }
     for (const e of state.enemies) if (e.alive) drawEnemy(e);
     for (const b of state.enemyShots) drawEnemyShot(b);
     for (const s of state.shots) drawShot(s);
@@ -1813,10 +1851,10 @@
     const c = enemyDefs[e.type].color;
     ctx.save();
     ctx.translate(e.x, e.y);
-    const visualScale = Math.pow(0.92, state.upgrades.shrink);
+    const visualScale = Math.pow(0.9, state.upgrades.shrink || 0);
     ctx.scale(
-      visualScale * (e.jumpScale || 1),
-      visualScale * (e.jumpScale || 1),
+      (e.jumpScale || 1) * visualScale,
+      (e.jumpScale || 1) * visualScale,
     );
     ctx.shadowColor = c;
     ctx.shadowBlur = 22;
@@ -2037,7 +2075,7 @@
     ctx.shadowColor = "#ff2bd6";
     ctx.shadowBlur = 18;
     ctx.beginPath();
-    ctx.arc(s.x, s.y, s.r * Math.pow(0.92, state.upgrades.shrink), 0, TAU);
+    ctx.arc(s.x, s.y, s.r * Math.pow(0.9, state.upgrades.shrink || 0), 0, TAU);
     ctx.fill();
     ctx.restore();
   }
@@ -2047,7 +2085,7 @@
     ctx.shadowColor = "#ff2bd6";
     ctx.shadowBlur = 14;
     ctx.beginPath();
-    ctx.arc(b.x, b.y, b.r * Math.pow(0.92, state.upgrades.shrink), 0, TAU);
+    ctx.arc(b.x, b.y, b.r * Math.pow(0.9, state.upgrades.shrink || 0), 0, TAU);
     ctx.fill();
     ctx.restore();
   }
