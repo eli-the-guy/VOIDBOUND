@@ -284,6 +284,24 @@
     last = performance.now(),
     mouse = { x: 0, y: 0, down: false },
     keys = {};
+  const mobile = {
+    enabled:
+      "ontouchstart" in window ||
+      navigator.maxTouchPoints > 0 ||
+      window.matchMedia("(pointer: coarse)").matches,
+    moveId: null,
+    aimId: null,
+    moveX: 0,
+    moveY: 0,
+    aimX: 0,
+    aimY: 0,
+    moveKnob: null,
+    aimKnob: null,
+    moveBase: null,
+    aimBase: null,
+    jumpButton: null,
+    abilityButton: null,
+  };
   const state = {
     mode: "start",
     level: 1,
@@ -1173,7 +1191,8 @@
     return true;
   }
   function update(dt) {
-    state.player.angle = angleTo(state.player, mouse);
+    if (!mobile.enabled || mobile.aimId === null)
+      state.player.angle = angleTo(state.player, mouse);
     if (state.mode === "altar") {
       state.altarCooldown = Math.max(0, state.altarCooldown - dt);
       updateDOM();
@@ -1189,12 +1208,17 @@
     p.cooldown = Math.max(0, p.cooldown - dt);
     updateBinders(dt);
     if (p.jump > 0) p.jump = Math.max(0, p.jump - dt);
-    p.angle = angleTo(p, mouse);
+    if (!mobile.enabled || mobile.aimId === null) p.angle = angleTo(p, mouse);
     const mx =
-        (keys.d || keys.arrowright ? 1 : 0) -
-        (keys.a || keys.arrowleft ? 1 : 0),
+        mobile.enabled && mobile.moveId !== null
+          ? mobile.moveX
+          : (keys.d || keys.arrowright ? 1 : 0) -
+            (keys.a || keys.arrowleft ? 1 : 0),
       my =
-        (keys.s || keys.arrowdown ? 1 : 0) - (keys.w || keys.arrowup ? 1 : 0),
+        mobile.enabled && mobile.moveId !== null
+          ? mobile.moveY
+          : (keys.s || keys.arrowdown ? 1 : 0) -
+            (keys.w || keys.arrowup ? 1 : 0),
       len = Math.hypot(mx, my) || 1;
     let sp = 245 + state.upgrades.speed * 35;
     if (state.ghost.active) sp *= 0.62 + Math.min(0.25, state.classCore * 0.04);
@@ -1230,7 +1254,14 @@
     p.y = clamp(p.y, arena.y + 15, arena.y + arena.h - 15);
     if (state.ghost.cooldown > 0)
       state.ghost.cooldown = Math.max(0, state.ghost.cooldown - dt);
-    if (mouse.down) firePlayer();
+    if (
+      (!mobile.enabled && mouse.down) ||
+      (mobile.enabled &&
+        mobile.aimId !== null &&
+        state.className !== "grappler")
+    ) {
+      firePlayer();
+    }
     for (const s of state.shots) {
       if (state.upgrades.homing) {
         let target = null,
@@ -2388,6 +2419,269 @@
     }
     ctx.globalAlpha = 1;
   }
+  function setupMobileControls() {
+    if (!mobile.enabled) return;
+
+    const style = document.createElement("style");
+    style.textContent = `
+      #voidboundMobileControls {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        pointer-events: none;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .vb-joystick {
+        position: absolute;
+        width: 128px;
+        height: 128px;
+        border-radius: 50%;
+        border: 2px solid rgba(255,255,255,.22);
+        background: rgba(25,8,40,.38);
+        box-shadow: 0 0 28px rgba(255,43,214,.18), inset 0 0 25px rgba(255,255,255,.05);
+        pointer-events: auto;
+        touch-action: none;
+      }
+      .vb-joystick::after {
+        content: "";
+        position: absolute;
+        inset: 15px;
+        border-radius: 50%;
+        border: 1px solid rgba(255,255,255,.08);
+      }
+      .vb-knob {
+        position: absolute;
+        width: 58px;
+        height: 58px;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%,-50%);
+        border-radius: 50%;
+        background: rgba(255,255,255,.16);
+        border: 2px solid rgba(255,255,255,.32);
+        box-shadow: 0 0 24px rgba(255,43,214,.3);
+        pointer-events: none;
+      }
+      .vb-label {
+        position: absolute;
+        left: 50%;
+        top: calc(100% + 7px);
+        transform: translateX(-50%);
+        font: 700 10px/1 Arial,sans-serif;
+        letter-spacing: 2px;
+        color: rgba(255,255,255,.42);
+        white-space: nowrap;
+        pointer-events: none;
+      }
+      #vbMoveJoystick { left: 24px; bottom: 24px; }
+      #vbAimJoystick { right: 24px; bottom: 24px; }
+      .vb-action {
+        position: absolute;
+        right: 30px;
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 5px;
+        box-sizing: border-box;
+        color: #fff;
+        font: 800 11px/1.15 Arial,sans-serif;
+        letter-spacing: 1px;
+        border: 2px solid rgba(255,255,255,.36);
+        background: rgba(118,35,155,.62);
+        box-shadow: 0 0 22px rgba(255,43,214,.22), inset 0 0 18px rgba(255,255,255,.06);
+        pointer-events: auto;
+        touch-action: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .vb-action:active { background: rgba(255,43,214,.72); transform: scale(.96); }
+      #vbJumpButton { bottom: 158px; }
+      #vbAbilityButton { bottom: 230px; }
+      @media (max-width: 520px) {
+        .vb-joystick { width: 112px; height: 112px; }
+        .vb-knob { width: 52px; height: 52px; }
+        #vbMoveJoystick { left: 16px; bottom: 16px; }
+        #vbAimJoystick { right: 16px; bottom: 16px; }
+        .vb-action { right: 24px; width: 56px; height: 56px; font-size: 10px; }
+        #vbJumpButton { bottom: 140px; }
+        #vbAbilityButton { bottom: 202px; }
+      }
+      @media (max-height: 520px) {
+        #vbJumpButton { right: 145px; bottom: 22px; }
+        #vbAbilityButton { right: 145px; bottom: 86px; }
+      }
+    `;
+    document.head.appendChild(style);
+
+    const root = document.createElement("div");
+    root.id = "voidboundMobileControls";
+    root.innerHTML = `
+      <div class="vb-joystick" id="vbMoveJoystick">
+        <div class="vb-knob"></div><div class="vb-label">MOVE</div>
+      </div>
+      <div class="vb-joystick" id="vbAimJoystick">
+        <div class="vb-knob"></div><div class="vb-label">AIM / FIRE</div>
+      </div>
+      <button class="vb-action" id="vbJumpButton" type="button">JUMP</button>
+      <button class="vb-action" id="vbAbilityButton" type="button">ABILITY</button>
+    `;
+    document.body.appendChild(root);
+
+    mobile.moveBase = root.querySelector("#vbMoveJoystick");
+    mobile.aimBase = root.querySelector("#vbAimJoystick");
+    mobile.moveKnob = mobile.moveBase.querySelector(".vb-knob");
+    mobile.aimKnob = mobile.aimBase.querySelector(".vb-knob");
+    mobile.jumpButton = root.querySelector("#vbJumpButton");
+    mobile.abilityButton = root.querySelector("#vbAbilityButton");
+
+    function refreshAbilityButton() {
+      if (!mobile.abilityButton) return;
+      const hasAbility =
+        state.className === "dasher" || state.className === "ghost";
+      mobile.abilityButton.style.display = hasAbility ? "flex" : "none";
+      mobile.abilityButton.textContent =
+        state.className === "dasher" ? "DASH" : "GHOST";
+    }
+    refreshAbilityButton();
+    if (window.MutationObserver && classScreen) {
+      new MutationObserver(refreshAbilityButton).observe(classScreen, {
+        attributes: true,
+        attributeFilter: ["class"],
+      });
+    }
+    mobile.jumpButton.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      if (state.mode === "play") tryJump();
+    });
+    mobile.abilityButton.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      if (state.mode !== "play") return;
+      if (state.className === "dasher") startDash();
+      else if (state.className === "ghost") toggleGhost();
+    });
+
+    function setKnob(knob, x, y) {
+      const max = 35;
+      const dx = x * max,
+        dy = y * max;
+      knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    }
+    function joystickVector(base, clientX, clientY) {
+      const r = base.getBoundingClientRect();
+      const cx = r.left + r.width / 2,
+        cy = r.top + r.height / 2;
+      let dx = clientX - cx,
+        dy = clientY - cy;
+      const max = r.width * 0.34;
+      const d = Math.hypot(dx, dy);
+      if (d > max) {
+        dx = (dx / d) * max;
+        dy = (dy / d) * max;
+      }
+      return { x: dx / max, y: dy / max };
+    }
+    function moveTouch(t) {
+      const v = joystickVector(mobile.moveBase, t.clientX, t.clientY);
+      mobile.moveX = v.x;
+      mobile.moveY = v.y;
+      setKnob(mobile.moveKnob, v.x, v.y);
+    }
+    function aimTouch(t) {
+      const v = joystickVector(mobile.aimBase, t.clientX, t.clientY);
+      mobile.aimX = v.x;
+      mobile.aimY = v.y;
+      setKnob(mobile.aimKnob, v.x, v.y);
+      if (Math.hypot(v.x, v.y) > 0.12) {
+        const r = canvas.getBoundingClientRect();
+        mouse.x = state.player.x + v.x * 300;
+        mouse.y = state.player.y + v.y * 300;
+        state.player.angle = Math.atan2(v.y, v.x);
+      }
+    }
+    function resetMove() {
+      mobile.moveId = null;
+      mobile.moveX = 0;
+      mobile.moveY = 0;
+      setKnob(mobile.moveKnob, 0, 0);
+    }
+    function resetAim(fire) {
+      const hadAim = mobile.aimId !== null;
+      mobile.aimId = null;
+      mobile.aimX = 0;
+      mobile.aimY = 0;
+      setKnob(mobile.aimKnob, 0, 0);
+      mouse.down = false;
+      if (
+        fire &&
+        hadAim &&
+        state.className === "grappler" &&
+        state.mode !== "class" &&
+        state.mode !== "upgrade"
+      )
+        firePlayer();
+    }
+
+    root.addEventListener(
+      "touchstart",
+      (e) => {
+        e.preventDefault();
+        // Action-button touches must not also activate the aim joystick underneath.
+        if (e.target.closest && e.target.closest(".vb-action")) return;
+        for (const t of e.changedTouches) {
+          if (mobile.moveId === null && t.clientX < window.innerWidth / 2) {
+            mobile.moveId = t.identifier;
+            moveTouch(t);
+          } else if (
+            mobile.aimId === null &&
+            t.clientX >= window.innerWidth / 2
+          ) {
+            mobile.aimId = t.identifier;
+            aimTouch(t);
+          }
+        }
+      },
+      { passive: false },
+    );
+    root.addEventListener(
+      "touchmove",
+      (e) => {
+        e.preventDefault();
+        for (const t of e.changedTouches) {
+          if (t.identifier === mobile.moveId) moveTouch(t);
+          if (t.identifier === mobile.aimId) aimTouch(t);
+        }
+      },
+      { passive: false },
+    );
+    root.addEventListener(
+      "touchend",
+      (e) => {
+        e.preventDefault();
+        for (const t of e.changedTouches) {
+          if (t.identifier === mobile.moveId) resetMove();
+          if (t.identifier === mobile.aimId) resetAim(true);
+        }
+      },
+      { passive: false },
+    );
+    root.addEventListener(
+      "touchcancel",
+      (e) => {
+        e.preventDefault();
+        for (const t of e.changedTouches) {
+          if (t.identifier === mobile.moveId) resetMove();
+          if (t.identifier === mobile.aimId) resetAim(false);
+        }
+      },
+      { passive: false },
+    );
+  }
+
   function updateInputPos(e) {
     const r = canvas.getBoundingClientRect();
     mouse.x = e.clientX - r.left;
@@ -2416,6 +2710,7 @@
   canvas.addEventListener(
     "touchstart",
     (e) => {
+      if (mobile.enabled) return;
       e.preventDefault();
       const t = e.touches[0];
       mouse.x = t.clientX - canvas.getBoundingClientRect().left;
@@ -2425,7 +2720,10 @@
     },
     { passive: false },
   );
-  canvas.addEventListener("touchend", () => (mouse.down = false));
+  canvas.addEventListener("touchend", () => {
+    if (!mobile.enabled) mouse.down = false;
+  });
+  setupMobileControls();
   resize();
   resetPlayer();
   updateHud();
