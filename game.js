@@ -245,6 +245,36 @@
       icon: "PHZ",
       cost: 15,
     },
+    quickstep: {
+      name: "QUICKSTEP",
+      desc: "Gain a permanent movement-speed boost.",
+      icon: "QST",
+      cost: 11,
+    },
+    bounty: {
+      name: "BINDER BOUNTY",
+      desc: "Every binder you collect is worth more binders.",
+      icon: "BNT",
+      cost: 13,
+    },
+    aegis: {
+      name: "AEGIS PLATE",
+      desc: "Gain one emergency shield that blocks a fatal hit.",
+      icon: "AGS",
+      cost: 18,
+    },
+    scatter: {
+      name: "SCATTER SHOT",
+      desc: "Add two angled shuriken to each attack.",
+      icon: "SCT",
+      cost: 21,
+    },
+    highvault: {
+      name: "HIGH VAULT",
+      desc: "Increase your jump duration beyond normal limits.",
+      icon: "VLT",
+      cost: 17,
+    },
   };
   const superUpgradeDefs = {
     voidengine: {
@@ -276,6 +306,24 @@
       desc: "SUPER UPGRADE — Dramatically boosts your class core and all class-specific abilities.",
       icon: "SUPER",
       cost: 55,
+    },
+    voidnova: {
+      name: "VOID NOVA",
+      desc: "SUPER UPGRADE — Adds a powerful ring of extra shuriken to every attack.",
+      icon: "SUPER",
+      cost: 62,
+    },
+    binderheart: {
+      name: "BINDER HEART",
+      desc: "SUPER UPGRADE — Greatly increases binder income from pickups and surges.",
+      icon: "SUPER",
+      cost: 58,
+    },
+    secondlife: {
+      name: "SECOND LIFE",
+      desc: "SUPER UPGRADE — Grants an additional emergency shield against a fatal hit.",
+      icon: "SUPER",
+      cost: 70,
     },
   };
   let W = 0,
@@ -634,6 +682,8 @@
     state.player.invuln = 3;
     spawnEnemy(chosen);
     if ((state.chainLevels.swarm || 0) > 0) spawnEnemy(chosen);
+    for (let i = 0; i < (state.chainLevels.ambush || 0); i++)
+      spawnEnemy(chosen);
     state.roundEnemyIds = state.enemies.map((e) => e.id);
     spawnBinders(10);
     state.enemyShots = [];
@@ -701,6 +751,9 @@
     const spread = state.upgrades.twin ? 0.09 : 0;
     let offsets = state.upgrades.twin ? [-spread, spread] : [0];
     if (state.superUpgrades.voidengine) offsets = offsets.concat([0.18, -0.18]);
+    if (state.upgrades.scatter) offsets = offsets.concat([0.28, -0.28]);
+    if (state.superUpgrades.voidnova)
+      offsets = offsets.concat([0.42, -0.42, 0.72, -0.72]);
     for (const off of offsets) {
       const aa = a + off;
       state.shots.push({
@@ -750,6 +803,26 @@
       name: "BLACK HOLE",
       desc: "A dangerous gravity orb periodically appears in the arena.",
     },
+    crossfire: {
+      name: "CROSSFIRE",
+      desc: "Enemies add another angled projectile to their attacks per stack.",
+    },
+    surge: {
+      name: "SURGE",
+      desc: "Enemy projectiles travel faster with every stack.",
+    },
+    overgrowth: {
+      name: "OVERGROWTH",
+      desc: "Enemy bodies and hazards grow larger with each stack.",
+    },
+    ambush: {
+      name: "AMBUSH",
+      desc: "Every altar choice adds an extra copy of the chosen enemy.",
+    },
+    blackout: {
+      name: "BLACKOUT",
+      desc: "The arena's gravity anomaly appears more frequently.",
+    },
   };
   function ensureUpgradeState() {
     for (const k of Object.keys(upgradeDefs))
@@ -759,12 +832,24 @@
   }
   function upgradeCost(k) {
     const u = upgradeDefs[k] || superUpgradeDefs[k];
-    const lvl = state.upgrades[k] || 0;
+    const lvl = superUpgradeDefs[k]
+      ? state.superUpgrades[k] || 0
+      : state.upgrades[k] || 0;
     const base = u.cost || 6;
     return Math.floor(base + lvl * base * 0.55 + state.completedRounds * 0.7);
   }
   function addBinders(n) {
-    state.binderCount += n * (state.superUpgrades.goldrush ? 2 : 1);
+    const bountyMultiplier = 1 + (state.upgrades.bounty || 0) * 0.25;
+    const superMultiplier = state.superUpgrades.binderheart ? 1.75 : 1;
+    state.binderCount += Math.max(
+      1,
+      Math.floor(
+        n *
+          (state.superUpgrades.goldrush ? 2 : 1) *
+          bountyMultiplier *
+          superMultiplier,
+      ),
+    );
     updateBinderHud();
   }
   function spawnBinders(n = 10) {
@@ -852,7 +937,7 @@
     state.mode = "upgrade";
     upgradeChoices.innerHTML = "";
     const normal = Object.keys(upgradeDefs).sort(() => Math.random() - 0.5);
-    const superChance = Math.random() < 0.2;
+    const superChance = Math.random() < 0.28;
     let choices = [];
     if (superChance) {
       const sk = Object.keys(superUpgradeDefs).sort(
@@ -876,6 +961,19 @@
       c.onclick = () => chooseUpgrade(k, cost, superU);
       upgradeChoices.appendChild(c);
     }
+    const skip = document.createElement("button");
+    skip.type = "button";
+    skip.textContent = "SKIP UPGRADE — SAVE BINDERS";
+    skip.style.cssText =
+      "grid-column:1/-1;width:100%;padding:15px 18px;margin-top:6px;border:1px solid #b67cff88;border-radius:12px;background:linear-gradient(100deg,#24113b,#35102b);color:#f4dcff;font:900 13px system-ui;letter-spacing:1.4px;cursor:pointer;box-shadow:0 0 18px #a45cff22;";
+    skip.onclick = () => {
+      state.pendingUpgrade = false;
+      upgradeScreen.classList.add("hidden");
+      showMessage("UPGRADE SKIPPED — BINDERS SAVED");
+      if (state.pendingChain) showChains();
+      else showAltar();
+    };
+    upgradeChoices.appendChild(skip);
     upgradeScreen.classList.remove("hidden");
     altarScreen.style.display = "none";
     chainScreen.style.display = "none";
@@ -890,17 +988,19 @@
     state.binderCount -= cost;
     updateBinderHud();
     if (isSuper) state.superUpgrades[k] = (state.superUpgrades[k] || 0) + 1;
-    if (k === "voidheart") state.emergencyShield++;
     else state.upgrades[k] = (state.upgrades[k] || 0) + 1;
+    if (k === "voidheart" || k === "aegis" || k === "secondlife")
+      state.emergencyShield++;
     if (k === "classcore")
       state.classCore =
         state.upgrades.classcore + (state.superUpgrades.overcore || 0) * 2;
     if (k === "weaken") state.weaken = state.selectedEnemy;
-    if (k === "jump" || k === "phase")
+    if (k === "jump" || k === "phase" || k === "highvault")
       state.player.jumpMax =
         0.8 +
         (state.upgrades.jump || 0) * 0.3 +
-        (state.upgrades.phase || 0) * 0.18;
+        (state.upgrades.phase || 0) * 0.18 +
+        (state.upgrades.highvault || 0) * 0.25;
     upgradeScreen.classList.add("hidden");
     state.pendingUpgrade = false;
     showMessage(
@@ -1130,6 +1230,7 @@
   }
   function enemyBullet(x, y, a, speed = 210) {
     speed *= Math.pow(1.2, state.chainLevels.overclock || 0);
+    speed *= Math.pow(1.12, state.chainLevels.surge || 0);
     const add = (aa) =>
       state.enemyShots.push({
         x: x + Math.cos(aa) * 22,
@@ -1141,7 +1242,8 @@
         sizeScale: state.sizeScale,
       });
     add(a);
-    const extra = state.chainLevels.bulletstorm || 0;
+    const extra =
+      (state.chainLevels.bulletstorm || 0) + (state.chainLevels.crossfire || 0);
     for (let k = 1; k <= extra; k++) {
       const spread = 0.11 * k;
       add(a + spread);
@@ -1220,7 +1322,8 @@
           : (keys.s || keys.arrowdown ? 1 : 0) -
             (keys.w || keys.arrowup ? 1 : 0),
       len = Math.hypot(mx, my) || 1;
-    let sp = 245 + state.upgrades.speed * 35;
+    let sp =
+      245 + state.upgrades.speed * 35 + (state.upgrades.quickstep || 0) * 22;
     if (state.ghost.active) sp *= 0.62 + Math.min(0.25, state.classCore * 0.04);
     if (state.player.dashTime > 0) {
       state.player.dashTime -= dt;
@@ -1340,10 +1443,14 @@
       }
     }
     for (const e of state.enemies) if (e.alive) updateEnemy(e, dt);
-    if ((state.chainLevels.blackhole || 0) > 0) {
+    if (
+      (state.chainLevels.blackhole || 0) > 0 ||
+      (state.chainLevels.blackout || 0) > 0
+    ) {
       state.blackholeTimer = (state.blackholeTimer || 0) - dt;
       if (state.blackholeTimer <= 0) {
-        state.blackholeTimer = 7;
+        state.blackholeTimer =
+          7 / (1 + (state.chainLevels.blackout || 0) * 0.35);
         state.blackhole = {
           x: rnd(arena.x + 70, arena.x + arena.w - 70),
           y: rnd(arena.y + 70, arena.y + arena.h - 70),
@@ -2141,7 +2248,11 @@
     ctx.save();
     ctx.translate(e.x, e.y);
     const enemyScale =
-      state.sizeScale * Math.pow(1.18, state.chainLevels.heavy || 0);
+      state.sizeScale *
+      Math.pow(
+        1.18,
+        (state.chainLevels.heavy || 0) + (state.chainLevels.overgrowth || 0),
+      );
     ctx.scale(enemyScale * (e.jumpScale || 1), enemyScale * (e.jumpScale || 1));
     ctx.shadowColor = c;
     ctx.shadowBlur = 22;
