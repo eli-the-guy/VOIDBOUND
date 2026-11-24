@@ -429,3 +429,98 @@ footer {
   filter: brightness(1.25);
   opacity: 0.82;
 }
+
+/* ---- v4 upgrades ---- */
+#gameWrap,
+canvas {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+#flash {
+  position: absolute;
+  inset: 0;
+  z-index: 24;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s;
+  box-shadow: inset 0 0 120px #000;
+}
+.icon-btn {
+  padding: 6px 12px;
+  letter-spacing: 0.05em;
+  font-size: 12px;
+  border-radius: 8px;
+  box-shadow: none;
+  align-self: center;
+}
+button.secondary {
+  margin-left: 10px;
+  background: transparent;
+  border-color: #6b2b91;
+  box-shadow: none;
+}
+.best {
+  margin: 0 auto 16px;
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  color: #ffd85a;
+}
+#classChoices {
+  grid-template-columns: repeat(2, 1fr);
+}
+.overlay.centered .panel {
+  max-height: 94%;
+  overflow-y: auto;
+}
+#playerDom.shielded .player-core {
+  box-shadow:
+    0 0 0 4px #6ff7ff99,
+    0 0 26px #6ff7ff;
+}
+#playerDom.invuln {
+  animation: vbBlink 0.18s steps(2) infinite;
+}
+#playerDom.dashing {
+  filter: drop-shadow(0 0 18px #6ff7ff) brightness(1.4);
+}
+@keyframes vbBlink {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (max-width: 700px) {
+  .stats .lvl {
+    display: none;
+  }
+  .stats {
+    align-items: center;
+  }
+  #voidboundChainChoices {
+    grid-template-columns: 1fr !important;
+  }
+  #classChoices .choice {
+    min-height: 0;
+  }
+}
+@media (max-width: 520px) {
+  #upgradeChoices {
+    grid-template-columns: 1fr;
+  }
+}
+@media (pointer: coarse) {
+  .controls {
+    display: none;
+  }
+  footer {
+    display: none;
+  }
+}
+@media (max-height: 520px) {
+  footer {
+    display: none;
+  }
+  h1 {
+    font-size: 26px;
+  }
+}

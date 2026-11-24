@@ -4,19 +4,21 @@
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
     <title>VOIDBOUND</title>
-    <link rel="stylesheet" href="style.css?v=3" />
+    <link rel="stylesheet" href="style.css?v=4" />
   </head>
   <body>
     <div id="app">
       <header class="topbar">
         <div class="logo">VOIDBOUND</div>
         <div class="stats">
-          <span>LEVEL <b id="levelText">1</b></span>
+          <span>SCORE <b id="scoreText">0</b></span>
+          <span class="lvl">LEVEL <b id="levelText">1</b></span>
           <span>ROUND <b id="roundText">1</b></span>
           <span>ENEMIES <b id="enemyText">0</b></span>
+          <button id="pauseBtn" class="icon-btn" aria-label="Pause">II</button>
         </div>
       </header>
 
@@ -81,6 +83,7 @@
             <p>
               Choose your enemies. Survive the arena. Nothing takes two hits.
             </p>
+            <p class="best">BEST SCORE <b id="bestText">0</b></p>
             <button id="startBtn">BEGIN RUN</button>
           </section>
         </div>
@@ -103,11 +106,22 @@
           </section>
         </div>
 
+        <div id="pauseScreen" class="overlay centered hidden">
+          <section class="panel">
+            <div class="eyebrow">PAUSED</div>
+            <h1>HOLD THE VOID</h1>
+            <p>P / ESC to resume.</p>
+            <button id="resumeBtn">RESUME</button>
+            <button id="pauseRestartBtn" class="secondary">RESTART</button>
+          </section>
+        </div>
+
+        <div id="flash"></div>
         <div id="message"></div>
       </main>
 
       <footer>VOIDBOUND // MAGENTA PROTOCOL</footer>
     </div>
-    <script src="game.js?v=voidbound-rebuild-3"></script>
+    <script src="game.js?v=voidbound-4"></script>
   </body>
 </html>
