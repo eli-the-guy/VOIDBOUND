@@ -470,6 +470,7 @@
     turretTimer: 0,
     tookHit: false,
     paused: false,
+    mines: [],
   };
   let arena = { x: 0, y: 0, w: 0, h: 0 };
   const binderHud = document.createElement("div");
@@ -652,6 +653,22 @@
     else if (state.className === "ghost") toggleGhost();
     else if (state.className === "voidmage") startNova();
   }
+  function updateMines(dt) {
+    const p = state.player;
+    for (let i = state.mines.length - 1; i >= 0; i--) {
+      const m = state.mines[i];
+      if (m.arm > 0) {
+        m.arm -= dt;
+        continue;
+      }
+      if (dist(p, m) < 28 && !playerJumpSafe()) {
+        state.mines.splice(i, 1);
+        for (let k = 0; k < 16; k++) particle(m.x, m.y, m.color, 0.5, 3, 220);
+        shake(5);
+        if (hurtPlayer(m)) return;
+      }
+    }
+  }
   function updateSystems(dt) {
     const p = state.player;
     if (state.comboTimer > 0) {
@@ -670,6 +687,7 @@
       if (e.flash > 0) e.flash -= dt;
     }
     updatePickups(dt);
+    updateMines(dt);
     const sc = state.upgrades.sentinel || 0;
     if (sc > 0) {
       state.sentAngle += (2.6 + sc * 0.25) * dt;
@@ -956,7 +974,7 @@
     e.phase = e.type === "beam" ? "cool" : e.type === "shock" ? "idle" : "idle";
     e.phaseTimer =
       e.type === "beam"
-        ? attackDelay(10)
+        ? attackDelay(4)
         : e.type === "shock"
           ? attackDelay(5)
           : 0;
@@ -1042,6 +1060,7 @@
     state.player.invuln = 3;
     state.tookHit = false;
     state.pickups = [];
+    state.mines = [];
     spawnEnemy(chosen);
     const isBoss = state.round % 10 === 0;
     if (isBoss) {
@@ -1523,7 +1542,7 @@
       phase: type === "beam" ? "cool" : type === "shock" ? "idle" : "idle",
       phaseTimer:
         type === "beam"
-          ? attackDelay(10)
+          ? attackDelay(4)
           : type === "shock"
             ? attackDelay(5)
             : 0,
@@ -1587,11 +1606,21 @@
     const frenzy = Math.pow(0.82, state.chainLevels.frenzy || 0);
     const relentless = Math.pow(0.9, state.chainLevels.relentless || 0);
     const timeBreak = Math.pow(1.25, state.superUpgrades.timestop || 0);
-    const swing = state.chainLevels.closecall ? 2.5 : 2;
+    const swing = state.chainLevels.closecall ? 2.5 : 0;
     return Math.max(
       0.2,
       base * frenzy * relentless * timeBreak + rnd(-swing, swing),
     );
+  }
+  function rayToArena(x, y, a) {
+    const dx = Math.cos(a),
+      dy = Math.sin(a);
+    let t = Infinity;
+    if (dx > 1e-6) t = Math.min(t, (arena.x + arena.w - x) / dx);
+    else if (dx < -1e-6) t = Math.min(t, (arena.x - x) / dx);
+    if (dy > 1e-6) t = Math.min(t, (arena.y + arena.h - y) / dy);
+    else if (dy < -1e-6) t = Math.min(t, (arena.y - y) / dy);
+    return Math.max(120, t);
   }
   function playerJumpSafe() {
     return state.player.jump > (state.chainLevels.fragile ? 0.22 : 0);
@@ -1913,12 +1942,15 @@
       const dt = edt;
       if (b.seeker) {
         const a = angleTo(b, p);
-        const sp = Math.min(360, (b.seekerSpeed || 120) + 80 * dt);
+        const sp = Math.min(
+          b.seekerMax || 360,
+          (b.seekerSpeed || 120) + 80 * dt,
+        );
         b.vx = Math.cos(a) * sp;
         b.vy = Math.sin(a) * sp;
         b.seekerSpeed = sp;
       }
-      if (b.ricochet) {
+      if (b.ricochet > 0) {
         if (b.x + b.r > arena.x + arena.w || b.x - b.r < arena.x) {
           b.vx *= -1;
           b.ricochet--;
@@ -1927,6 +1959,11 @@
           b.vy *= -1;
           b.ricochet--;
         }
+      }
+      if (b.orbit && b.orbitEnemy && !b.orbitEnemy.alive) {
+        b.orbit = false;
+        b.vx = Math.cos(b.orbitAngle) * (b.releaseSpeed || 190);
+        b.vy = Math.sin(b.orbitAngle) * (b.releaseSpeed || 190);
       }
       if (b.orbit && b.orbitEnemy && b.orbitEnemy.alive) {
         b.orbitAngle += b.orbitSpeed * dt;
@@ -1946,6 +1983,7 @@
         const base = Math.atan2(b.vy, b.vx);
         for (let k = -2; k <= 2; k++)
           enemyBullet(b.x, b.y, base + k * 0.22, 215);
+        b.life = 0;
       }
       b.life -= dt;
     }
@@ -2015,17 +2053,23 @@
           e.beamProgress = 0;
         }
       } else if (e.phase === "warn") {
-        // Keep tracking the player during the warning, then lock the direction.
-        e.lockedAngle = angleTo(e, p);
+        // Track the player, then lock the direction for the final second.
+        if (e.phaseTimer > 1) e.lockedAngle = angleTo(e, p);
         e.phaseTimer -= dt;
         if (e.phaseTimer <= 0) {
           e.phase = "fire";
           e.phaseTimer = attackDelay(3);
           e.beamProgress = 0;
+          // The beam front crosses the whole arena in exactly its fire time.
+          e.beamSpeed = clamp(
+            rayToArena(e.x, e.y, e.lockedAngle) / Math.max(0.5, e.phaseTimer),
+            140,
+            520,
+          );
         }
       } else if (e.phase === "fire") {
         // Slow-moving beam front: the player can outrun it.
-        e.beamProgress += 175 * dt;
+        e.beamProgress += (e.beamSpeed || 175) * dt;
         if (
           beamHitTraveling(p, e, e.lockedAngle, e.beamProgress) &&
           !playerJumpSafe()
@@ -2051,20 +2095,19 @@
         if (e.phaseTimer <= 0) {
           e.phase = "jump";
           e.phaseTimer = attackDelay(2);
+          e.jumpDur = Math.max(0.5, e.phaseTimer);
+          e.startX = e.x;
+          e.startY = e.y;
           e.targetX = rnd(arena.x + 60, arena.x + arena.w - 60);
           e.targetY = rnd(arena.y + 60, arena.y + arena.h - 60);
           e.jumpScale = 1;
         }
       } else if (e.phase === "jump") {
         e.phaseTimer -= dt;
-        e.jumpScale = 1 + Math.sin(((2 - e.phaseTimer) / 2) * Math.PI) * 0.75;
-        const a = angleTo(e, { x: e.targetX, y: e.targetY }),
-          d = Math.min(
-            dist(e, { x: e.targetX, y: e.targetY }),
-            enemySpeed(e) * dt * 1.7,
-          );
-        e.x += Math.cos(a) * d;
-        e.y += Math.sin(a) * d;
+        const jk = clamp(1 - e.phaseTimer / e.jumpDur, 0, 1);
+        e.jumpScale = 1 + Math.sin(jk * Math.PI) * 0.75;
+        e.x = e.startX + (e.targetX - e.startX) * jk;
+        e.y = e.startY + (e.targetY - e.startY) * jk;
         if (e.phaseTimer <= 0) {
           e.x = e.targetX;
           e.y = e.targetY;
@@ -2159,10 +2202,10 @@
           if (hurtPlayer(e)) return;
         }
         if (
-          e.x < arena.x - 80 ||
-          e.x > arena.x + arena.w + 80 ||
-          e.y < arena.y - 80 ||
-          e.y > arena.y + arena.h + 80
+          e.x < arena.x + 30 ||
+          e.x > arena.x + arena.w - 30 ||
+          e.y < arena.y + 30 ||
+          e.y > arena.y + arena.h - 30
         ) {
           e.x = clamp(e.x, arena.x + 30, arena.x + arena.w - 30);
           e.y = clamp(e.y, arena.y + 30, arena.y + arena.h - 30);
@@ -2187,17 +2230,26 @@
         if (hurtPlayer(e)) return;
       }
     } else if (e.type === "mine") {
+      // Wander around the arena so mines are spread out, not stacked.
+      e.wanderT = (e.wanderT || 0) - dt;
+      if (
+        e.wx === undefined ||
+        e.wanderT <= 0 ||
+        dist(e, { x: e.wx, y: e.wy }) < 14
+      ) {
+        e.wx = rnd(arena.x + 50, arena.x + arena.w - 50);
+        e.wy = rnd(arena.y + 50, arena.y + arena.h - 50);
+        e.wanderT = 3;
+      }
+      const wa = angleTo(e, { x: e.wx, y: e.wy });
+      e.x += Math.cos(wa) * enemySpeed(e) * dt;
+      e.y += Math.sin(wa) * enemySpeed(e) * dt;
       e.mineTimer -= dt;
       if (e.mineTimer <= 0) {
-        e.mines.push({ x: e.x, y: e.y, life: 12 });
-        e.mineTimer = attackDelay(4);
+        state.mines.push({ x: e.x, y: e.y, arm: 1, color: "#55d9ff" });
+        if (state.mines.length > 14) state.mines.shift();
+        e.mineTimer = attackDelay(3.5);
       }
-      for (const m of e.mines) m.life -= dt;
-      e.mines = e.mines.filter((m) => m.life > 0);
-      for (const m of e.mines)
-        if (dist(p, m) < 28 && !playerJumpSafe()) {
-          if (hurtPlayer(m)) return;
-        }
     } else if (e.type === "orbiter") {
       e.orbitTimer -= dt;
       if (e.orbitTimer <= 0) {
@@ -2300,6 +2352,7 @@
         for (const m of e.voidMarks) {
           for (let k = 0; k < 8; k++) enemyBullet(m.x, m.y, (k * TAU) / 8, 175);
         }
+        e.voidMarks = [];
         e.voidPhase = "mark";
         e.voidTimer = attackDelay(4);
       }
@@ -2308,8 +2361,8 @@
       if (e.teleportTimer <= 0) {
         e.x = rnd(arena.x + 45, arena.x + arena.w - 45);
         e.y = rnd(arena.y + 45, arena.y + arena.h - 45);
-        for (let k = -1; k <= 1; k++)
-          enemyBullet(e.x, e.y, e.angle + k * 0.2, 270);
+        const ta = angleTo(e, p);
+        for (let k = -1; k <= 1; k++) enemyBullet(e.x, e.y, ta + k * 0.2, 270);
         e.teleportTimer = attackDelay(3);
       }
     } else if (e.type === "splitter") {
@@ -2329,16 +2382,11 @@
     } else if (e.type === "predictor") {
       e.predictorTimer -= dt;
       if (e.predictorTimer <= 0) {
-        const mx =
-          (keys.d || keys.arrowright ? 1 : 0) -
-          (keys.a || keys.arrowleft ? 1 : 0);
-        const my =
-          (keys.s || keys.arrowdown ? 1 : 0) - (keys.w || keys.arrowup ? 1 : 0);
-        const len = Math.hypot(mx, my) || 1;
-        const lead = 0.7;
+        const mv = getMoveVec();
+        const lead = Math.min(1.2, dist(e, p) / 245);
         const target = {
-          x: p.x + (mx / len) * 245 * lead,
-          y: p.y + (my / len) * 245 * lead,
+          x: p.x + mv.x * 245 * lead,
+          y: p.y + mv.y * 245 * lead,
         };
         enemyBullet(e.x, e.y, angleTo(e, target), 245);
         e.predictorTimer = attackDelay(2.5);
@@ -2376,15 +2424,20 @@
         e.x += Math.cos(e.angle) * enemySpeed(e) * dt;
         e.y += Math.sin(e.angle) * enemySpeed(e) * dt;
         if (e.huntTimer <= 0) {
-          e.huntTargetX = p.x;
-          e.huntTargetY = p.y;
+          e.huntPhase = "lock";
+          e.huntTimer = 0.8;
+          e.huntAngle = e.angle;
+        }
+      } else if (e.huntPhase === "lock") {
+        e.huntTimer -= dt;
+        if (e.huntTimer > 0.3) e.huntAngle = e.angle;
+        if (e.huntTimer <= 0) {
           e.huntPhase = "lunge";
-          e.huntTimer = 1.2;
-          e.angle = angleTo(e, { x: e.huntTargetX, y: e.huntTargetY });
+          e.huntTimer = 1.0;
         }
       } else {
-        e.x += Math.cos(e.angle) * 430 * dt;
-        e.y += Math.sin(e.angle) * 430 * dt;
+        e.x += Math.cos(e.huntAngle) * 430 * dt;
+        e.y += Math.sin(e.huntAngle) * 430 * dt;
         if (
           dist(p, e) < (p.r + e.r) * state.sizeScale + 4 &&
           !playerJumpSafe()
@@ -2394,10 +2447,10 @@
         e.huntTimer -= dt;
         if (
           e.huntTimer <= 0 ||
-          e.x < arena.x - 100 ||
-          e.x > arena.x + arena.w + 100 ||
-          e.y < arena.y - 100 ||
-          e.y > arena.y + arena.h + 100
+          e.x < arena.x + 25 ||
+          e.x > arena.x + arena.w - 25 ||
+          e.y < arena.y + 25 ||
+          e.y > arena.y + arena.h - 25
         ) {
           e.x = clamp(e.x, arena.x + 30, arena.x + arena.w - 30);
           e.y = clamp(e.y, arena.y + 30, arena.y + arena.h - 30);
@@ -2415,19 +2468,43 @@
       }
     } else if (e.type === "rift") {
       e.riftTimer -= dt;
+      e.portals = e.portals || [];
       if (e.riftTimer <= 0) {
-        const x = rnd(arena.x + 30, arena.x + arena.w - 30),
-          y = rnd(arena.y + 30, arena.y + arena.h - 30);
-        for (let k = 0; k < 4; k++)
-          enemyBullet(x, y, angleTo({ x, y }, p) + rnd(-0.5, 0.5), 205);
+        for (let k = 0; k < 2; k++)
+          e.portals.push({
+            x: rnd(arena.x + 40, arena.x + arena.w - 40),
+            y: rnd(arena.y + 40, arena.y + arena.h - 40),
+            t: 0.9,
+          });
         e.riftTimer = attackDelay(4);
       }
+      for (const g of e.portals) {
+        g.t -= dt;
+        if (g.t <= 0 && !g.done) {
+          g.done = true;
+          for (let k = 0; k < 4; k++)
+            enemyBullet(g.x, g.y, angleTo(g, p) + rnd(-0.5, 0.5), 205);
+          for (let k = 0; k < 10; k++)
+            particle(g.x, g.y, "#5c7dff", 0.4, 3, 140);
+        }
+      }
+      e.portals = e.portals.filter((g) => !g.done);
     } else if (e.type === "swarmcore") {
       e.swarmTimer -= dt;
       if (e.swarmTimer <= 0) {
         for (let k = 0; k < 5; k++) {
-          const a = angleTo(e, p) + rnd(-0.7, 0.7);
-          enemyBullet(e.x, e.y, a, 150);
+          const a = angleTo(e, p) + rnd(-0.9, 0.9);
+          state.enemyShots.push({
+            x: e.x,
+            y: e.y,
+            vx: Math.cos(a) * 100,
+            vy: Math.sin(a) * 100,
+            r: 5,
+            life: 6,
+            seeker: true,
+            seekerSpeed: 100,
+            seekerMax: 175,
+          });
         }
         e.swarmTimer = attackDelay(4);
       }
@@ -2453,10 +2530,22 @@
         e.gravityX = rnd(arena.x + 80, arena.x + arena.w - 80);
         e.gravityY = rnd(arena.y + 80, arena.y + arena.h - 80);
         e.gravityLife = 3;
+        e.gravityVX = rnd(-70, 70);
+        e.gravityVY = rnd(-70, 70);
         e.gravityTimer = attackDelay(5);
       }
       if (e.gravityLife > 0) {
         e.gravityLife -= dt;
+        e.gravityX = clamp(
+          e.gravityX + (e.gravityVX || 0) * dt,
+          arena.x + 60,
+          arena.x + arena.w - 60,
+        );
+        e.gravityY = clamp(
+          e.gravityY + (e.gravityVY || 0) * dt,
+          arena.y + 60,
+          arena.y + arena.h - 60,
+        );
         const d = dist(p, { x: e.gravityX, y: e.gravityY });
         if (d < 150) {
           const a = angleTo(p, { x: e.gravityX, y: e.gravityY });
@@ -2481,9 +2570,17 @@
               arena.y + arena.h - 25,
             ),
           });
-        for (const d of e.decoys) enemyBullet(d.x, d.y, angleTo(d, p), 210);
+        for (const d of e.decoys) d.t = rnd(0.5, 2);
         e.decoyTimer = attackDelay(4);
       }
+      for (const d of e.decoys || []) {
+        d.t -= dt;
+        if (d.t <= 0 && !d.done) {
+          d.done = true;
+          enemyBullet(d.x, d.y, angleTo(d, p), 210);
+        }
+      }
+      e.decoys = (e.decoys || []).filter((d) => !d.done);
     } else if (e.type === "ricochet") {
       e.ricochetTimer -= dt;
       if (e.ricochetTimer <= 0) {
@@ -2672,6 +2769,7 @@
       state.enemyShots = [];
       state.binders = [];
       state.pickups = [];
+      state.mines = [];
       if (state.pendingUpgrade) showUpgrades();
       else if (state.pendingChain) showChains();
       else showAltar();
@@ -2992,6 +3090,18 @@
       ctx.fillRect(e.x - w / 2, e.y - 56, w * hp, 7);
       ctx.restore();
     }
+    if (e.type === "rift" && e.portals)
+      for (const g of e.portals) {
+        ctx.save();
+        ctx.strokeStyle = c;
+        ctx.shadowColor = c;
+        ctx.shadowBlur = 16;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.ellipse(g.x, g.y, 18 * (1 - g.t / 0.9) + 6, 24, 0, 0, TAU);
+        ctx.stroke();
+        ctx.restore();
+      }
     if (e.type === "lancer" && e.lancePhase === "warn") {
       ctx.save();
       ctx.strokeStyle = c + "99";
@@ -3077,23 +3187,6 @@
       ctx.stroke();
       ctx.restore();
     }
-    if (e.type === "mine") {
-      for (const m of e.mines) {
-        ctx.save();
-        ctx.translate(m.x, m.y);
-        ctx.strokeStyle = "#55d9ff";
-        ctx.shadowColor = "#55d9ff";
-        ctx.shadowBlur = 12;
-        ctx.beginPath();
-        ctx.arc(0, 0, 13, 0, TAU);
-        ctx.stroke();
-        ctx.fillStyle = "#55d9ff";
-        ctx.beginPath();
-        ctx.arc(0, 0, 4, 0, TAU);
-        ctx.fill();
-        ctx.restore();
-      }
-    }
     if (e.type === "repeater") {
       ctx.save();
       ctx.strokeStyle = c + "66";
@@ -3130,13 +3223,30 @@
       ctx.stroke();
       ctx.restore();
     }
+    if (e.type === "voidhunter" && e.huntPhase === "lock") {
+      ctx.save();
+      ctx.strokeStyle = c + "aa";
+      ctx.setLineDash([10, 8]);
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(e.x, e.y);
+      ctx.lineTo(
+        e.x + Math.cos(e.huntAngle) * 450,
+        e.y + Math.sin(e.huntAngle) * 450,
+      );
+      ctx.stroke();
+      ctx.restore();
+    }
     if (e.type === "voidhunter" && e.huntPhase === "lunge") {
       ctx.save();
       ctx.strokeStyle = c + "88";
       ctx.lineWidth = 8;
       ctx.beginPath();
       ctx.moveTo(e.x, e.y);
-      ctx.lineTo(e.x - Math.cos(e.angle) * 90, e.y - Math.sin(e.angle) * 90);
+      ctx.lineTo(
+        e.x - Math.cos(e.huntAngle) * 90,
+        e.y - Math.sin(e.huntAngle) * 90,
+      );
       ctx.stroke();
       ctx.restore();
     }
@@ -3245,6 +3355,31 @@
     if (state.slowTimer > 0) {
       ctx.fillStyle = "rgba(140,90,255,0.07)";
       ctx.fillRect(arena.x, arena.y, arena.w, arena.h);
+    }
+    for (const m of state.mines) {
+      const armed = m.arm <= 0,
+        pulse = 0.6 + 0.4 * Math.sin(now / 150);
+      ctx.save();
+      ctx.translate(m.x, m.y);
+      ctx.globalAlpha = armed ? 1 : 0.35 + 0.3 * Math.abs(Math.sin(now / 60));
+      ctx.strokeStyle = armed ? "#ff5c7a" : m.color;
+      ctx.shadowColor = armed ? "#ff5c7a" : m.color;
+      ctx.shadowBlur = 12;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, 13, 0, TAU);
+      ctx.stroke();
+      ctx.fillStyle = armed ? "#ff5c7a" : m.color;
+      ctx.beginPath();
+      ctx.arc(0, 0, armed ? 4 * pulse + 1.5 : 3, 0, TAU);
+      ctx.fill();
+      if (armed) {
+        ctx.globalAlpha = 0.18;
+        ctx.beginPath();
+        ctx.arc(0, 0, 28, 0, TAU);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
     for (const pk of state.pickups) {
       const d = pickupDefs[pk.type];
