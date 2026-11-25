@@ -568,6 +568,7 @@
   }
   function killEnemy(e) {
     e.alive = false;
+    if (e.copy) e.copy.alive = false;
     state.combo++;
     state.comboTimer = 2.5;
     const val = e.boss ? 1000 : 100;
@@ -974,7 +975,7 @@
     e.phase = e.type === "beam" ? "cool" : e.type === "shock" ? "idle" : "idle";
     e.phaseTimer =
       e.type === "beam"
-        ? attackDelay(4)
+        ? attackDelay(10)
         : e.type === "shock"
           ? attackDelay(5)
           : 0;
@@ -1013,6 +1014,9 @@
     e.pulseTimer = attackDelay(5);
     e.pulseRadius = 0;
     e.mimicTimer = attackDelay(3);
+    if (e.copy) e.copy.alive = false;
+    e.copy = null;
+    e.copyTimer = 0;
     e.huntTimer = attackDelay(4);
     e.huntPhase = "track";
     e.huntTargetX = e.x;
@@ -1542,7 +1546,7 @@
       phase: type === "beam" ? "cool" : type === "shock" ? "idle" : "idle",
       phaseTimer:
         type === "beam"
-          ? attackDelay(4)
+          ? attackDelay(10)
           : type === "shock"
             ? attackDelay(5)
             : 0,
@@ -1606,21 +1610,15 @@
     const frenzy = Math.pow(0.82, state.chainLevels.frenzy || 0);
     const relentless = Math.pow(0.9, state.chainLevels.relentless || 0);
     const timeBreak = Math.pow(1.25, state.superUpgrades.timestop || 0);
-    const swing = state.chainLevels.closecall ? 2.5 : 0;
+    const swing = state.chainLevels.closecall ? 2.5 : 2;
     return Math.max(
       0.2,
       base * frenzy * relentless * timeBreak + rnd(-swing, swing),
     );
   }
-  function rayToArena(x, y, a) {
-    const dx = Math.cos(a),
-      dy = Math.sin(a);
-    let t = Infinity;
-    if (dx > 1e-6) t = Math.min(t, (arena.x + arena.w - x) / dx);
-    else if (dx < -1e-6) t = Math.min(t, (arena.x - x) / dx);
-    if (dy > 1e-6) t = Math.min(t, (arena.y + arena.h - y) / dy);
-    else if (dy < -1e-6) t = Math.min(t, (arena.y - y) / dy);
-    return Math.max(120, t);
+  function turnToward(cur, target, maxStep) {
+    const d = Math.atan2(Math.sin(target - cur), Math.cos(target - cur));
+    return cur + clamp(d, -maxStep, maxStep);
   }
   function playerJumpSafe() {
     return state.player.jump > (state.chainLevels.fragile ? 0.22 : 0);
@@ -2053,23 +2051,18 @@
           e.beamProgress = 0;
         }
       } else if (e.phase === "warn") {
-        // Track the player, then lock the direction for the final second.
-        if (e.phaseTimer > 1) e.lockedAngle = angleTo(e, p);
+        // The warning line tracks the player but lags a little behind.
+        e.lockedAngle = turnToward(e.lockedAngle, angleTo(e, p), 1.8 * dt);
         e.phaseTimer -= dt;
         if (e.phaseTimer <= 0) {
           e.phase = "fire";
           e.phaseTimer = attackDelay(3);
-          e.beamProgress = 0;
-          // The beam front crosses the whole arena in exactly its fire time.
-          e.beamSpeed = clamp(
-            rayToArena(e.x, e.y, e.lockedAngle) / Math.max(0.5, e.phaseTimer),
-            140,
-            520,
-          );
+          e.beamProgress = 4000; // the beam spans the whole arena instantly
         }
       } else if (e.phase === "fire") {
-        // Slow-moving beam front: the player can outrun it.
-        e.beamProgress += (e.beamSpeed || 175) * dt;
+        // Keeps sweeping after the player, always lagging slightly behind.
+        e.lockedAngle = turnToward(e.lockedAngle, angleTo(e, p), 0.95 * dt);
+        e.beamProgress = 4000;
         if (
           beamHitTraveling(p, e, e.lockedAngle, e.beamProgress) &&
           !playerJumpSafe()
@@ -2406,15 +2399,79 @@
           e.pulseRadius = 0;
       }
     } else if (e.type === "mimic") {
-      e.mimicTimer -= dt;
-      const a = angleTo(e, p);
-      e.x += Math.cos(a) * enemySpeed(e) * 0.55 * dt;
-      e.y += Math.sin(a) * enemySpeed(e) * 0.55 * dt;
-      if (e.mimicTimer <= 0) {
-        for (let k = -2; k <= 2; k++)
-          enemyBullet(e.x, e.y, e.angle + k * 0.18, 225);
-        e.mimicTimer = attackDelay(3);
+      e.copyTimer = (e.copyTimer || 0) - dt;
+      const pool = [
+        ...new Set(
+          state.enemies
+            .filter((o) => o.alive && o.type !== "mimic")
+            .map((o) => o.type),
+        ),
+      ];
+      if (e.copy && !pool.includes(e.copy.type)) {
+        e.copy.alive = false;
+        e.copy = null;
       }
+      if (pool.length && (!e.copy || e.copyTimer <= 0)) {
+        const choices =
+          e.copy && pool.length > 1
+            ? pool.filter((t) => t !== e.copy.type)
+            : pool;
+        if (e.copy) e.copy.alive = false;
+        spawnEnemy(choices[Math.floor(Math.random() * choices.length)]);
+        const c2 = state.enemies.pop();
+        c2.x =
+          c2.targetX =
+          c2.swordX =
+          c2.dashX =
+          c2.huntTargetX =
+          c2.gravityX =
+            e.x;
+        c2.y =
+          c2.targetY =
+          c2.swordY =
+          c2.dashY =
+          c2.huntTargetY =
+          c2.gravityY =
+            e.y;
+        c2.r = e.r;
+        e.copy = c2;
+        e.copyTimer = attackDelay(8);
+        e.flash = 0.3;
+        for (let k = 0; k < 14; k++)
+          particle(e.x, e.y, enemyDefs[c2.type].color, 0.6, 3, 160);
+        floatText(
+          e.x,
+          e.y - 30,
+          enemyDefs[c2.type].name,
+          enemyDefs[c2.type].color,
+        );
+      }
+      if (e.copy) {
+        e.copy.x = e.x;
+        e.copy.y = e.y;
+        updateEnemy(e.copy, dt);
+        e.x = e.copy.x;
+        e.y = e.copy.y;
+      } else {
+        // Nothing to copy yet: fall back to a plain spread shot.
+        e.mimicTimer -= dt;
+        if (e.mimicTimer <= 0) {
+          for (let k = -2; k <= 2; k++)
+            enemyBullet(e.x, e.y, e.angle + k * 0.18, 225);
+          e.mimicTimer = attackDelay(3);
+        }
+      }
+      const ma = angleTo(e, p);
+      e.x = clamp(
+        e.x + Math.cos(ma) * enemySpeed(e) * 0.25 * dt,
+        arena.x + 20,
+        arena.x + arena.w - 20,
+      );
+      e.y = clamp(
+        e.y + Math.sin(ma) * enemySpeed(e) * 0.25 * dt,
+        arena.y + 20,
+        arena.y + arena.h - 20,
+      );
       if (dist(p, e) < (p.r + e.r) * state.sizeScale && !playerJumpSafe()) {
         if (hurtPlayer(e)) return;
       }
@@ -2929,6 +2986,22 @@
     }
   }
   function drawEnemy(e) {
+    if (e.type === "mimic" && e.copy) {
+      e.copy.flash = e.flash;
+      drawEnemy(e.copy);
+      ctx.save();
+      ctx.strokeStyle = "#ffffffcc";
+      ctx.shadowColor = "#fff";
+      ctx.shadowBlur = 10;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 6]);
+      ctx.lineDashOffset = -performance.now() / 60;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, 30 * state.sizeScale, 0, TAU);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
     const c = enemyDefs[e.type].color;
     ctx.save();
     ctx.translate(e.x, e.y);
