@@ -524,3 +524,11 @@ button.secondary {
     font-size: 26px;
   }
 }
+
+.icon-btn.off {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+.stats .icon-btn + .icon-btn {
+  margin-left: -14px;
+}

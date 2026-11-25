@@ -551,6 +551,7 @@
     if (v && state.mode !== "play") return;
     state.paused = v;
     if (pauseScreen) pauseScreen.classList.toggle("hidden", !v);
+    VoidMusic.duck(v);
   }
   function damageEnemy(e, amt = 1) {
     if (!e.alive || (e.iframes || 0) > 0) return false;
@@ -1431,6 +1432,7 @@
     else showAltar();
   }
   function startGame() {
+    VoidMusic.start();
     startScreen.classList.add("hidden");
     state.level = 1;
     state.round = 1;
@@ -2766,6 +2768,7 @@
     if (state.mode !== "play") return;
     state.mode = "dead";
     state.player.alive = false;
+    VoidMusic.death();
     const newBest = state.score > state.best;
     if (newBest) {
       state.best = state.score;
@@ -2796,6 +2799,7 @@
   function completeLevel() {
     updateHud();
     state.mode = "between";
+    VoidMusic.stinger();
     for (const e of state.enemies)
       if (e.boss) {
         e.boss = false;
@@ -2875,6 +2879,17 @@
     enemyText.textContent = aliveEnemyCount();
     if (scoreText) scoreText.textContent = state.score;
     updateStatusHud();
+    updateMusic();
+  }
+  function updateMusic() {
+    const playing = state.mode === "play";
+    const bossRound = playing && state.round % 10 === 0;
+    const base = Math.min(0.75, 0.14 + state.round * 0.045);
+    const combo = Math.min(0.2, state.combo * 0.02);
+    VoidMusic.setBoss(bossRound);
+    VoidMusic.setIntensity(
+      !playing ? 0.15 : bossRound ? 1 : Math.min(1, base + combo),
+    );
   }
   function draw() {
     ctx.clearRect(0, 0, W, H);
@@ -3828,8 +3843,30 @@
   document.getElementById("resumeBtn").onclick = () => setPaused(false);
   document.getElementById("pauseRestartBtn").onclick = () => location.reload();
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) setPaused(true);
+    if (document.hidden) {
+      setPaused(true);
+      VoidMusic.suspend();
+    } else VoidMusic.resume();
   });
+  const muteBtn = document.getElementById("muteBtn");
+  const syncMute = () => {
+    muteBtn.textContent = VoidMusic.isMuted() ? "♪̸" : "♪";
+    muteBtn.classList.toggle("off", VoidMusic.isMuted());
+  };
+  muteBtn.onclick = () => {
+    VoidMusic.start();
+    VoidMusic.toggleMute();
+    syncMute();
+  };
+  syncMute();
+  // browsers block audio until a gesture: start on the first touch/click/key
+  const unlockAudio = () => {
+    VoidMusic.start();
+    window.removeEventListener("pointerdown", unlockAudio);
+    window.removeEventListener("keydown", unlockAudio);
+  };
+  window.addEventListener("pointerdown", unlockAudio);
+  window.addEventListener("keydown", unlockAudio);
   canvas.addEventListener("pointerdown", (e) => {
     if (state.mode !== "altar") return;
     const r = canvas.getBoundingClientRect(),
