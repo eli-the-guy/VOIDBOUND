@@ -39,6 +39,8 @@
   let round = 1,
     dnb = false,
     wantDnb = false,
+    drums = false,
+    wantDrums = false,
     tier = 0;
   let softCurve = null;
   let step = 0,
@@ -359,6 +361,70 @@
     lfo.start(t);
     lfo.stop(t + len + 0.05);
   }
+  // ---- round 30+: dedicated drum track layered over the drum & bass ----
+  function tom(t, f0, vol = 0.35, dur = 0.28) {
+    const o = ctx.createOscillator(),
+      g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(f0 * 1.9, t);
+    o.frequency.exponentialRampToValueAtTime(f0, t + 0.07);
+    env(g, t, 0.003, vol, dur);
+    o.connect(g);
+    g.connect(musicBus);
+    const send = ctx.createGain();
+    send.gain.value = 0.25;
+    g.connect(send);
+    send.connect(delayIn);
+    o.start(t);
+    o.stop(t + dur + 0.1);
+    noiseHit(t, 900, 1, vol * 0.18, 0.03, "bandpass");
+  }
+  function taiko(t, vol) {
+    tom(t, 62, vol, 0.75);
+    tom(t, 95, vol * 0.5, 0.35);
+    noiseHit(t, 260, 1, vol * 0.3, 0.14, "lowpass");
+  }
+  function clap(t, v = 0.14) {
+    for (let k = 0; k < 3; k++)
+      noiseHit(
+        t + k * 0.011,
+        1500,
+        1.4,
+        v * (k === 2 ? 1 : 0.6),
+        k === 2 ? 0.16 : 0.02,
+        "bandpass",
+        k === 2 ? 0.2 : 0,
+      );
+  }
+  function ride(t, v, accent) {
+    noiseHit(t, 6500, 3, v, accent ? 0.34 : 0.1);
+  }
+  function drumTrack(barStep, t, s16) {
+    const b4 = bar % 4,
+      fill = b4 === 3,
+      I = intensity;
+    // taiko war drums anchor each bar
+    if (barStep === 0) taiko(t, 0.52);
+    if (barStep === 8) taiko(t, 0.32);
+    if (barStep === 14 && b4 % 2) taiko(t, 0.28);
+    // claps layered on the backbeat
+    if (barStep === 4 || (barStep === 12 && !fill)) clap(t, 0.12 + I * 0.05);
+    // busy amen-style ghost snares
+    if ([2, 7, 9, 13, 15].includes(barStep) && !fill && Math.random() < 0.55)
+      snare(t, 0.05 + Math.random() * 0.04);
+    // syncopated extra kicks
+    if ((barStep === 2 || barStep === 13) && Math.random() < 0.5) kick(t, 0.55);
+    // ride on the 8ths, accented on the beat
+    if (barStep % 2 === 0)
+      ride(t, barStep % 4 === 0 ? 0.05 : 0.03, barStep % 8 === 0);
+    // descending tom run on fill bars
+    if (fill && barStep >= 8)
+      tom(t, [260, 225, 195, 165, 140, 118, 98, 80][barStep - 8], 0.36);
+    // double-time snare burst before the new phrase
+    if (b4 === 3 && barStep === 15) {
+      snare(t + s16 * 0.5, 0.12);
+    }
+  }
   // [step, semitones above root, length in steps]
   const REESE_PATTERNS = [
     [
@@ -441,6 +507,22 @@
         }
       }
     }
+    if (wantDrums !== drums && dnb) {
+      if (wantDrums && barStep >= 8) {
+        // accelerating snare roll into the drum-track entrance
+        snare(t, 0.05 + (barStep - 8) * 0.03);
+        if (barStep >= 12)
+          snare(t + sixteenth * 0.5, 0.08 + (barStep - 12) * 0.04);
+      }
+      if (barStep === 0) {
+        drums = wantDrums;
+        if (drums) {
+          taiko(t, 0.7);
+          boom(t);
+          crash(t);
+        }
+      }
+    }
     if (barStep === 0) setDroneRoot(root, t);
     const I = intensity;
 
@@ -457,6 +539,7 @@
 
     if (dnb) {
       dnbStep(barStep, t, sixteenth, root);
+      if (drums) drumTrack(barStep, t, sixteenth);
       // sparser, glassier plucks over the top
       if (barStep % 2 === 0 && Math.random() < 0.1 + I * 0.16) {
         const m = root + 24 + pick(SCALE);
@@ -558,10 +641,19 @@
     setRound(n) {
       round = n;
       wantDnb = n >= 15;
-      tier = n >= 25 ? 2 : wantDnb ? 1 : 0;
+      wantDrums = n >= 30;
+      tier = n >= 30 ? 3 : n >= 25 ? 2 : wantDnb ? 1 : 0;
     },
     getState() {
-      return { dnb, wantDnb, tier, bpm: Math.round(bpm()), bar };
+      return {
+        dnb,
+        wantDnb,
+        drums,
+        wantDrums,
+        tier,
+        bpm: Math.round(bpm()),
+        bar,
+      };
     },
     // lower the music for menus / pause overlays
     duck(on) {
