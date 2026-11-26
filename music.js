@@ -35,6 +35,12 @@
   let intensity = 0.15,
     target = 0.15,
     boss = false;
+  // Drum & bass mode kicks in from round 15 (tier 2 from round 25).
+  let round = 1,
+    dnb = false,
+    wantDnb = false,
+    tier = 0;
+  let softCurve = null;
   let step = 0,
     bar = 0,
     nextTime = 0;
@@ -85,6 +91,12 @@
     for (let i = 0; i < 512; i++) {
       const x = (i / 511) * 2 - 1;
       crushCurve[i] = Math.round(x * 5) / 5;
+    }
+
+    softCurve = new Float32Array(512);
+    for (let i = 0; i < 512; i++) {
+      const x = (i / 511) * 2 - 1;
+      softCurve[i] = Math.tanh(x * 3.2);
     }
 
     // noise buffer for percussion
@@ -141,7 +153,7 @@
       const oct = i % 2 ? 12 : 0;
       o.frequency.setTargetAtTime(hz(m + oct), t, 1.2);
     });
-    droneNodes.dis.frequency.setTargetAtTime(hz(m + 18) , t, 0.6); // tritone+octave
+    droneNodes.dis.frequency.setTargetAtTime(hz(m + 18), t, 0.6); // tritone+octave
   }
 
   function env(g, t, a, peak, d, end = 0.0001) {
@@ -254,7 +266,163 @@
     });
   }
 
+  // ---- drum & bass voices ----
+  function snare(t, v = 0.2) {
+    noiseHit(t, 1900, 0.9, v, 0.14, "bandpass", 0.18);
+    const o = ctx.createOscillator(),
+      g = ctx.createGain();
+    o.type = "triangle";
+    o.frequency.setValueAtTime(260, t);
+    o.frequency.exponentialRampToValueAtTime(140, t + 0.08);
+    env(g, t, 0.002, v * 0.9, 0.12);
+    o.connect(g);
+    g.connect(musicBus);
+    o.start(t);
+    o.stop(t + 0.2);
+  }
+  function hat(t, v = 0.045, open = false) {
+    noiseHit(t, 8500, 1, v, open ? 0.16 : 0.04);
+  }
+  function crash(t) {
+    noiseHit(t, 5200, 0.7, 0.16, 1.1, "highpass", 0.3);
+  }
+  function boom(t) {
+    const o = ctx.createOscillator(),
+      g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(110, t);
+    o.frequency.exponentialRampToValueAtTime(34, t + 0.7);
+    env(g, t, 0.005, 0.9, 0.9);
+    o.connect(g);
+    g.connect(musicBus);
+    o.start(t);
+    o.stop(t + 1);
+  }
+  function riser(t, dur) {
+    const s = ctx.createBufferSource();
+    s.buffer = noiseBuf;
+    s.loop = true;
+    const f = ctx.createBiquadFilter();
+    f.type = "highpass";
+    f.frequency.setValueAtTime(400, t);
+    f.frequency.exponentialRampToValueAtTime(9000, t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.16, t + dur);
+    g.gain.linearRampToValueAtTime(0.0001, t + dur + 0.04);
+    s.connect(f);
+    f.connect(g);
+    g.connect(musicBus);
+    s.start(t);
+    s.stop(t + dur + 0.1);
+  }
+  // Classic Reese: two detuned saws through a wobbling low-pass + a clean sub.
+  function reese(t, m, len, vol, wobHz) {
+    const out = ctx.createGain(),
+      f = ctx.createBiquadFilter(),
+      ws = ctx.createWaveShaper(),
+      lfo = ctx.createOscillator(),
+      lg = ctx.createGain();
+    ws.curve = softCurve;
+    f.type = "lowpass";
+    f.Q.value = 7 + tier * 2;
+    f.frequency.value = 140 + 260 * intensity;
+    lfo.frequency.value = wobHz;
+    lg.gain.value = 380 + intensity * 450 + tier * 160;
+    lfo.connect(lg);
+    lg.connect(f.frequency);
+    out.gain.setValueAtTime(0.0001, t);
+    out.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+    out.gain.setValueAtTime(vol, t + Math.max(0.02, len - 0.04));
+    out.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    [-14, 14].forEach((d) => {
+      const o = ctx.createOscillator();
+      o.type = "sawtooth";
+      o.frequency.value = hz(m);
+      o.detune.value = d;
+      o.connect(f);
+      o.start(t);
+      o.stop(t + len + 0.05);
+    });
+    f.connect(ws);
+    ws.connect(out);
+    const sub = ctx.createOscillator(),
+      sg = ctx.createGain();
+    sub.type = "sine";
+    sub.frequency.value = hz(m - 12);
+    sg.gain.value = 0.5;
+    sub.connect(sg);
+    sg.connect(out);
+    out.connect(musicBus);
+    sub.start(t);
+    sub.stop(t + len + 0.05);
+    lfo.start(t);
+    lfo.stop(t + len + 0.05);
+  }
+  // [step, semitones above root, length in steps]
+  const REESE_PATTERNS = [
+    [
+      [0, 0, 6],
+      [6, 12, 1.5],
+      [8, 0, 5],
+      [14, 10, 2],
+    ],
+    [
+      [0, 0, 3],
+      [3, 0, 3],
+      [6, 7, 2],
+      [8, 0, 6],
+      [14, 12, 1.5],
+    ],
+    [
+      [0, 0, 6],
+      [6, 0, 2],
+      [8, 5, 3],
+      [11, 3, 3],
+      [14, 0, 2],
+    ],
+    [
+      [0, 0, 6],
+      [6, 0, 2],
+      [8, 0, 2],
+      [10, 0, 2],
+      [12, 0, 2],
+      [14, 0, 2],
+    ],
+  ];
+  function dnbStep(barStep, t, s16, root) {
+    const I = intensity,
+      b4 = bar % 4,
+      fill = b4 === 3;
+    // two-step kick pattern, busier every 4th bar
+    const kicks = fill ? [0, 6, 10, 11] : b4 === 1 ? [0, 3, 10] : [0, 10];
+    if (kicks.includes(barStep)) kick(t, 0.75);
+    // backbeat snare on 2 and 4, with ghost notes
+    if (barStep === 4 || (barStep === 12 && !fill)) snare(t, 0.2 + I * 0.08);
+    if (
+      (barStep === 7 || barStep === 9 || barStep === 15) &&
+      !fill &&
+      Math.random() < 0.35
+    )
+      snare(t, 0.05);
+    // amen-style roll into the next phrase
+    if (fill && barStep >= 12) snare(t, 0.07 + (barStep - 11) * 0.05);
+    // hats
+    if (barStep % 2 === 0) hat(t, 0.04 + I * 0.02, barStep === 14);
+    if (tier >= 2 && barStep % 2 === 1 && Math.random() < 0.7) hat(t, 0.022);
+    // crash at the top of every phrase
+    if (b4 === 0 && barStep === 0) crash(t);
+    // reese bass line
+    const pat = REESE_PATTERNS[b4];
+    for (const [st, semi, len] of pat)
+      if (st === barStep) {
+        const wob = 1 / (s16 * pick([2, 4, 4, 8]));
+        reese(t, root + semi, s16 * len * 0.96, 0.2 + I * 0.07, wob);
+      }
+  }
+
   function bpm() {
+    if (dnb) return 170 + intensity * 4 + (boss ? 4 : 0);
     return 88 + intensity * 38 + (boss ? 10 : 0);
   }
 
@@ -262,6 +430,17 @@
     const sixteenth = 60 / bpm() / 4;
     const barStep = i % 16;
     const root = ROOTS[bar % ROOTS.length];
+    // Switch genre on the downbeat, with a riser the bar before and a drop.
+    if (wantDnb !== dnb) {
+      if (wantDnb && barStep === 8) riser(t, sixteenth * 8);
+      if (barStep === 0) {
+        dnb = wantDnb;
+        if (dnb) {
+          boom(t);
+          crash(t);
+        }
+      }
+    }
     if (barStep === 0) setDroneRoot(root, t);
     const I = intensity;
 
@@ -273,6 +452,21 @@
         0.5,
       );
       droneNodes.disG.gain.setTargetAtTime(boss ? 0.045 : 0, t, 0.4);
+      droneNodes.out.gain.setTargetAtTime(dnb ? 0.5 : 0.9, t, 0.6);
+    }
+
+    if (dnb) {
+      dnbStep(barStep, t, sixteenth, root);
+      // sparser, glassier plucks over the top
+      if (barStep % 2 === 0 && Math.random() < 0.1 + I * 0.16) {
+        const m = root + 24 + pick(SCALE);
+        pluck(t, m, 0.06, true);
+        if (Math.random() < 0.25)
+          pluck(t + sixteenth * 0.5, m + 12, 0.035, true);
+      }
+      if (boss && (barStep === 0 || barStep === 10)) stab(t, root);
+      if (barStep === 15) bar++;
+      return;
     }
 
     // kick: four on the floor-ish when intense, sparse when calm
@@ -281,7 +475,8 @@
     else if (I <= 0.3 && barStep === 0) kick(t, 0.45);
 
     // off-beat hats / noise ticks
-    if (I > 0.45 && barStep % 4 === 2) noiseHit(t, 7500, 1, 0.06 + I * 0.05, 0.05);
+    if (I > 0.45 && barStep % 4 === 2)
+      noiseHit(t, 7500, 1, 0.06 + I * 0.05, 0.05);
     if (I > 0.6 && barStep % 2 === 1 && Math.random() < 0.5)
       noiseHit(t, 9000, 1, 0.035, 0.03);
     // industrial snare / glitch burst
@@ -295,7 +490,12 @@
     if (I > 0.18) {
       const pat = I > 0.6 ? [0, 3, 6, 8, 11, 14] : [0, 6, 10];
       if (pat.includes(barStep))
-        bass(t, root + (Math.random() < 0.1 ? 12 : 0), sixteenth * 2.2, 0.28 + I * 0.15);
+        bass(
+          t,
+          root + (Math.random() < 0.1 ? 12 : 0),
+          sixteenth * 2.2,
+          0.28 + I * 0.15,
+        );
     }
 
     // glitchy plucks: random walk through scale, stutters sometimes
@@ -354,6 +554,15 @@
     setBoss(b) {
       boss = !!b;
     },
+    // Called with the current round: from round 15 the score goes drum & bass.
+    setRound(n) {
+      round = n;
+      wantDnb = n >= 15;
+      tier = n >= 25 ? 2 : wantDnb ? 1 : 0;
+    },
+    getState() {
+      return { dnb, wantDnb, tier, bpm: Math.round(bpm()), bar };
+    },
     // lower the music for menus / pause overlays
     duck(on) {
       ducked = !!on;
@@ -398,7 +607,8 @@
       try {
         localStorage.setItem("voidboundMuted", muted ? "1" : "0");
       } catch (e) {}
-      if (master) master.gain.setTargetAtTime(muted ? 0 : VOL, ctx.currentTime, 0.1);
+      if (master)
+        master.gain.setTargetAtTime(muted ? 0 : VOL, ctx.currentTime, 0.1);
       return muted;
     },
     isMuted: () => muted,

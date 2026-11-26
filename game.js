@@ -474,14 +474,7 @@
     obstacles: [],
   };
   let arena = { x: 0, y: 0, w: 0, h: 0 };
-  const binderHud = document.createElement("div");
-  binderHud.id = "voidboundBinderHud";
-  binderHud.innerHTML =
-    '<span class="vbBinderDot">●</span> BINDERS: <b id="vbBinderCount">0</b>';
-  binderHud.style.cssText =
-    "position:absolute;left:16px;top:12px;z-index:20;padding:8px 12px;border:1px solid #d7a83d88;border-radius:12px;background:#120d18dd;color:#ffd85a;font:700 14px system-ui;letter-spacing:1px;box-shadow:0 0 18px #d7a83d33;pointer-events:none;";
   wrap.style.position = wrap.style.position || "relative";
-  wrap.appendChild(binderHud);
   const chainScreen = document.createElement("div");
   chainScreen.id = "voidboundChainScreen";
   chainScreen.style.cssText =
@@ -490,9 +483,25 @@
     '<div style="width:min(920px,92%);text-align:center"><div style="font:900 34px system-ui;color:#ff5ca8;letter-spacing:4px">CHOOSE A CHAIN</div><div style="margin:8px 0 22px;color:#d8cce0">Chains are permanent modifiers that make the run harder.</div><div id="voidboundChainChoices" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px"></div></div>';
   wrap.appendChild(chainScreen);
   const chainChoices = chainScreen.querySelector("#voidboundChainChoices");
+  let lastBinderShown = 0;
   function updateBinderHud() {
-    const el = document.getElementById("vbBinderCount");
-    if (el) el.textContent = Math.floor(state.binderCount);
+    const el = document.getElementById("vbBinderCount"),
+      chip = document.getElementById("binderChip"),
+      n = Math.floor(state.binderCount || 0);
+    if (!el) return;
+    el.textContent = n;
+    if (chip && n !== lastBinderShown) {
+      const cls = n > lastBinderShown ? "gain" : "spend";
+      chip.classList.remove("gain", "spend");
+      void chip.offsetWidth; // restart the animation
+      chip.classList.add(cls);
+      clearTimeout(updateBinderHud.t);
+      updateBinderHud.t = setTimeout(
+        () => chip.classList.remove("gain", "spend"),
+        380,
+      );
+    }
+    lastBinderShown = n;
   }
   function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
@@ -502,7 +511,7 @@
     pauseScreen = document.getElementById("pauseScreen");
   const statusHud = document.createElement("div");
   statusHud.style.cssText =
-    "position:absolute;left:16px;top:54px;z-index:20;display:flex;flex-direction:column;gap:4px;font:800 11px system-ui;letter-spacing:1.5px;pointer-events:none;";
+    "position:absolute;left:40px;top:30px;z-index:20;display:flex;flex-direction:column;gap:4px;font:800 11px system-ui;letter-spacing:1.5px;pointer-events:none;";
   wrap.appendChild(statusHud);
   const pickupDefs = {
     shield: { label: "SHIELD +1", color: "#6ff7ff", sym: "S" },
@@ -1971,6 +1980,9 @@
       c.onclick = () => chooseUpgrade(k, cost, superU);
       upgradeChoices.appendChild(c);
     }
+    const upP = upgradeScreen.querySelector("p");
+    if (upP)
+      upP.innerHTML = `Choose one upgrade. You have <b style="color:#ffd85a">● ${Math.floor(state.binderCount)} binders</b>.`;
     const skip = document.createElement("button");
     skip.type = "button";
     skip.textContent = "SKIP UPGRADE — SAVE BINDERS";
@@ -3552,6 +3564,7 @@
     const base = Math.min(0.75, 0.14 + state.round * 0.045);
     const combo = Math.min(0.2, state.combo * 0.02);
     VoidMusic.setBoss(bossRound);
+    VoidMusic.setRound(state.round);
     VoidMusic.setIntensity(
       !playing ? 0.15 : bossRound ? 1 : Math.min(1, base + combo),
     );

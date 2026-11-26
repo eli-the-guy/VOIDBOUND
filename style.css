@@ -532,3 +532,66 @@ button.secondary {
 .stats .icon-btn + .icon-btn {
   margin-left: -14px;
 }
+
+/* ---- binder counter lives in the top bar ---- */
+.stats .binders {
+  color: #d9b04a;
+  padding: 5px 11px;
+  border: 1px solid #d7a83d66;
+  border-radius: 999px;
+  background: #1a1208cc;
+  box-shadow: 0 0 14px #d7a83d22;
+  white-space: nowrap;
+  align-self: center;
+  transition: border-color 0.2s;
+}
+.stats .binders i {
+  font-style: normal;
+  color: #ffd85a;
+  text-shadow: 0 0 8px #ffd85a;
+}
+.stats .binders b {
+  color: #ffd85a;
+  min-width: 1.6em;
+  display: inline-block;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.stats .binders.gain {
+  animation: vbBinderGain 0.38s ease-out;
+}
+.stats .binders.spend {
+  animation: vbBinderSpend 0.38s ease-out;
+}
+@keyframes vbBinderGain {
+  30% {
+    transform: scale(1.14);
+    box-shadow: 0 0 22px #ffd85a99;
+    border-color: #ffd85a;
+  }
+}
+@keyframes vbBinderSpend {
+  30% {
+    transform: scale(0.94);
+    border-color: #ff5c7a;
+    box-shadow: 0 0 18px #ff5c7a66;
+  }
+}
+@media (max-width: 700px) {
+  .stats .binders {
+    padding: 3px 8px;
+  }
+}
+@media (max-width: 560px) {
+  .logo {
+    display: none;
+  }
+  .topbar {
+    padding: 0 8px;
+  }
+  .stats {
+    flex: 1;
+    justify-content: space-between;
+    gap: 4px;
+  }
+}
